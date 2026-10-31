@@ -957,11 +957,16 @@ class ShadingInkProcessing
 public:
   using Base = DoubleInkProcessing<ShadingInkProcessing<ImageTraits>, ImageTraits>;
 
-  ShadingInkProcessing(ToolLoop* loop) : m_shading(loop) {}
-  void processPixel(int x, int y) { *Base::m_dstAddress = m_shading(*Base::m_srcAddress); }
+  ShadingInkProcessing(ToolLoop* loop)
+    : m_shading(loop), m_onReentry(loop->shadingOnReentry()) {}
+  void processPixel(int x, int y)
+  {
+    *Base::m_dstAddress = m_shading(m_onReentry ? *Base::m_dstAddress : *Base::m_srcAddress);
+  }
 
 private:
   PixelShadingInkHelper<ImageTraits> m_shading;
+  bool m_onReentry;
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -1766,6 +1771,7 @@ public:
   BrushShadingInkProcessing(ToolLoop* loop)
     : BrushInkProcessingBase<ImageTraits>(loop)
     , m_shading(loop)
+    , m_onReentry(loop->shadingOnReentry())
   {
   }
 
@@ -1776,6 +1782,7 @@ public:
 
 private:
   PixelShadingInkHelper<ImageTraits> m_shading;
+  bool m_onReentry;
 };
 
 template<>
@@ -1789,19 +1796,19 @@ void BrushShadingInkProcessing<RgbTraits>::processPixel(int x, int y)
       auto c = get_pixel_fast<RgbTraits>(m_brushImage, x, y);
       int iBrush = m_shading.findIndex(rgba_getr(c), rgba_getg(c), rgba_getb(c), rgba_geta(c));
       if (rgba_geta(c) != 0 && iBrush >= 0)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     case IMAGE_INDEXED: {
       auto c = get_pixel_fast<IndexedTraits>(m_brushImage, x, y);
       if (m_transparentColor != c)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     case IMAGE_GRAYSCALE: {
       auto c = get_pixel_fast<GrayscaleTraits>(m_brushImage, x, y);
       if (graya_geta(c) != 0)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     default: ASSERT(false); return;
@@ -1819,19 +1826,19 @@ void BrushShadingInkProcessing<IndexedTraits>::processPixel(int x, int y)
       auto c = get_pixel_fast<RgbTraits>(m_brushImage, x, y);
       int iBrush = m_shading.findIndex(rgba_getr(c), rgba_getg(c), rgba_getb(c), rgba_geta(c));
       if (rgba_geta(c) != 0 && iBrush >= 0)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     case IMAGE_INDEXED: {
       auto c = get_pixel_fast<IndexedTraits>(m_brushImage, x, y);
       if (m_transparentColor != c)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     case IMAGE_GRAYSCALE: {
       auto c = get_pixel_fast<GrayscaleTraits>(m_brushImage, x, y);
       if (graya_geta(c) != 0)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     default: ASSERT(false); return;
@@ -1849,19 +1856,19 @@ void BrushShadingInkProcessing<GrayscaleTraits>::processPixel(int x, int y)
       auto c = get_pixel_fast<RgbTraits>(m_brushImage, x, y);
       int iBrush = m_shading.findIndex(rgba_getr(c), rgba_getg(c), rgba_getb(c), rgba_geta(c));
       if (rgba_geta(c) != 0 && iBrush >= 0)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     case IMAGE_INDEXED: {
       auto c = get_pixel_fast<IndexedTraits>(m_brushImage, x, y);
       if (m_transparentColor != c)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     case IMAGE_GRAYSCALE: {
       auto c = get_pixel_fast<GrayscaleTraits>(m_brushImage, x, y);
       if (graya_geta(c) != 0)
-        *m_dstAddress = m_shading(*m_srcAddress);
+        *m_dstAddress = m_shading(m_onReentry ? *m_dstAddress : *m_srcAddress);
       break;
     }
     default: ASSERT(false); return;

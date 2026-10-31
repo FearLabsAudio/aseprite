@@ -113,6 +113,9 @@ public:
   {
   }
   virtual void prepareVForPointShape(ToolLoop* loop, int y) {}
+  // Bracket a brush position, including all its symmetry copies.
+  virtual void beginBrushFootprint() {}
+  virtual void endBrushFootprint() {}
   virtual void prepareUForPointShapeWholeScanline(ToolLoop* loop, int x1) {}
   virtual void prepareUForPointShapeSlicedScanline(ToolLoop* loop, bool leftSlice, int x1) {}
 };

@@ -632,6 +632,41 @@ protected:
   ContextBar* m_owner;
 };
 
+class ContextBar::ShadingModeField : public ComboBox {
+public:
+  ShadingModeField()
+  {
+    addItem(Strings::context_bar_shading_original());
+    addItem(Strings::context_bar_shading_on_reentry());
+    addItem(Strings::context_bar_shading_once_per_stroke());
+    m_lockChange = false;
+  }
+
+  void updateFromPreferences(const ToolPreferences& pref)
+  {
+    m_lockChange = true;
+    setSelectedItemIndex(pref.shadingOncePerStroke() ? 2 : pref.shadingOnReentry() ? 1 : 0);
+    m_lockChange = false;
+  }
+
+protected:
+  void onChange() override
+  {
+    ComboBox::onChange();
+    if (m_lockChange)
+      return;
+    auto& pref = Preferences::instance().tool(App::instance()->activeTool());
+    pref.shadingOncePerStroke(getSelectedItemIndex() == 2);
+    pref.shadingOnReentry(getSelectedItemIndex() == 1);
+    App::instance()->contextBar()->updateForActiveTool();
+  }
+
+  void onCloseListBox() override { releaseFocus(); }
+
+private:
+  bool m_lockChange = true;
+};
+
 class ContextBar::InkShadesField : public HBox {
 public:
   InkShadesField(ColorBar* colorBar)
@@ -2063,6 +2098,7 @@ ContextBar::ContextBar(TooltipManager* tooltipManager, ColorBar* colorBar)
   addChild(m_inkType = new InkTypeField(this));
   addChild(m_inkOpacityLabel = new Label(Strings::general_opacity()));
   addChild(m_inkOpacity = new InkOpacityField());
+  addChild(m_shadingMode = new ShadingModeField());
   addChild(m_inkShades = new InkShadesField(colorBar));
 
   addChild(m_eyedropperField = new EyedropperField());
@@ -2336,6 +2372,7 @@ void ContextBar::updateForTool(tools::Tool* tool)
 
     m_inkType->setInkTypeIcon(toolPref->ink());
     m_inkOpacity->setValue(toolPref->opacity());
+    m_shadingMode->updateFromPreferences(*toolPref);
 
     hasInkWithOpacity = ((isPaint && tools::inkHasOpacity(toolPref->ink())) || (isEffect));
 
@@ -2422,6 +2459,7 @@ void ContextBar::updateForTool(tools::Tool* tool)
   m_inkOpacityLabel->setVisible(showOpacity);
   m_inkOpacity->setVisible(showOpacity);
   m_inkShades->setVisible(hasInkShades);
+  m_shadingMode->setVisible(hasInkShades);
   m_eyedropperField->setVisible(isEyedropper);
   m_autoSelectLayer->setVisible(isMove);
   m_dynamics->setVisible(supportDynamics);
@@ -2782,6 +2820,7 @@ void ContextBar::setupTooltips(TooltipManager* tooltipManager)
   tooltipManager->addTooltipFor(m_inkType->at(0), Strings::context_bar_ink(), BOTTOM);
   tooltipManager->addTooltipFor(m_inkOpacity, Strings::context_bar_opacity(), BOTTOM);
   tooltipManager->addTooltipFor(m_inkShades->at(0), Strings::context_bar_shades(), BOTTOM);
+  tooltipManager->addTooltipFor(m_shadingMode, Strings::context_bar_shading_mode(), BOTTOM);
   tooltipManager->addTooltipFor(m_sprayWidth, Strings::context_bar_spray_width(), BOTTOM);
   tooltipManager->addTooltipFor(m_spraySpeed, Strings::context_bar_spray_speed(), BOTTOM);
   tooltipManager->addTooltipFor(m_pivot->at(0), Strings::context_bar_rotation_pivot(), BOTTOM);

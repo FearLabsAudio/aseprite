@@ -158,6 +158,7 @@ private:
   class InkTypeField;
   class InkOpacityField;
   class InkShadesField;
+  class ShadingModeField;
   class SprayWidthField;
   class SpraySpeedField;
   class SelectionModeField;
@@ -192,6 +193,7 @@ private:
   ui::Label* m_inkOpacityLabel;
   InkOpacityField* m_inkOpacity;
   InkShadesField* m_inkShades;
+  ShadingModeField* m_shadingMode;
   EyedropperField* m_eyedropperField;
   AutoSelectLayerField* m_autoSelectLayer;
   ui::Box* m_freehandBox;

@@ -30,6 +30,7 @@
 #include "app/tools/ink.h"
 #include "app/tools/intertwine.h"
 #include "app/tools/point_shape.h"
+#include "app/tools/shading_brush.h"
 #include "app/tools/symmetry.h"
 #include "app/tools/tool.h"
 #include "app/tools/tool_box.h"
@@ -117,6 +118,7 @@ protected:
   std::unique_ptr<tools::Symmetry> m_symmetry;
   Shade m_shade;
   std::unique_ptr<doc::Remap> m_shadingRemap;
+  bool m_shadingOnReentry = false;
   bool m_tilesMode;
   app::ColorTarget m_colorTarget;
   doc::color_t m_fgColor;
@@ -275,6 +277,20 @@ public:
       m_shade = App::instance()->contextBar()->getShade();
       m_shadingRemap.reset(
         App::instance()->contextBar()->createShadeRemap(m_button == tools::ToolLoop::Left));
+
+      // Keep the stroke's original indices as the shading input. In overlap
+      // mode, each movement otherwise feeds the shaded output back into it.
+      m_shadingOnReentry = (m_shadingRemap && m_toolPref.shadingOnReentry() &&
+                           !m_toolPref.shadingOncePerStroke() && m_controller->isFreehand() &&
+                           !m_pointShape->isSpray() && !m_tilesMode &&
+                           !m_controller->handleTracePolicy() &&
+                           m_tracePolicy != tools::TracePolicy::Last);
+      if (m_shadingRemap && (m_toolPref.shadingOncePerStroke() || m_shadingOnReentry) &&
+          m_tracePolicy == tools::TracePolicy::Overlap) {
+        m_tracePolicy = tools::TracePolicy::Accumulate;
+      }
+      if (m_shadingOnReentry)
+        m_brush = tools::progressive_shading_brush(m_brush);
     }
 
     updateAllVisibleRegion();
@@ -291,6 +307,12 @@ public:
   // IToolLoop interface
   tools::Tool* getTool() override { return m_tool; }
   Brush* getBrush() override { return m_brush.get(); }
+  int initialBrushSize() override { return m_origBrush->size(); }
+  int strokeBrushSize(int nominalSize) const override
+  {
+    return (m_shadingOnReentry && m_origBrush->type() != kImageBrushType ?
+              tools::progressive_shading_size(nominalSize) : nominalSize);
+  }
   void setBrush(const BrushRef& newBrush) override { m_brush = newBrush; }
   Doc* getDocument() override { return m_document; }
   Sprite* sprite() override { return m_sprite; }
@@ -377,6 +399,15 @@ public:
   tools::Symmetry* getSymmetry() override { return m_symmetry.get(); }
   const Shade& getShade() override { return m_shade; }
   doc::Remap* getShadingRemap() override { return m_shadingRemap.get(); }
+  bool shadingOnReentry() const override { return m_shadingOnReentry; }
+  bool shadingSoftEdges() const override
+  {
+    if (!m_shadingOnReentry)
+      return false;
+    if (m_brush->type() == kImageBrushType)
+      return std::max(m_brush->bounds().w, m_brush->bounds().h) >= 3;
+    return m_brush->size() >= 5;
+  }
 
   void limitDirtyAreaToViewport(gfx::Region& rgn) override { rgn &= m_allVisibleRgn; }
 

@@ -204,6 +204,7 @@ public:
 
       // Dynamic size and angle
       int size = std::clamp(int(pt.size), int(Brush::kMinBrushSize), int(Brush::kMaxBrushSize));
+      size = loop->strokeBrushSize(size);
       int angle = std::clamp(int(pt.angle), -180, 180);
       if ((brush->size() != size) ||
           (brush->angle() != angle && m_origBrushType != kCircleBrushType) ||

@@ -44,7 +44,7 @@ ToolLoopManager::ToolLoopManager(ToolLoop* toolLoop)
   : m_toolLoop(toolLoop)
   , m_canceled(false)
   , m_dynamics(toolLoop->getDynamics())
-  , m_brush0(toolLoop->getBrush())
+  , m_brush0(toolLoop->getBrush()->cloneWithSharedImages())
 {
 }
 
@@ -344,6 +344,26 @@ void ToolLoopManager::calculateDirtyArea(const Strokes& strokes)
                                                  stroke.firstPoint().symmetry,
                                                  r2);
 
+    if (m_toolLoop->strokeBrushSize(3) != 3) {
+      // Reserve the maximum compensated footprint even after dynamics shrank
+      // the last stamp. A subsequent stamp can grow again within this segment.
+      Rect maximum = m_brush0->bounds();
+      if (m_dynamics.size != DynamicSensor::Static &&
+          m_dynamics.minSize > m_toolLoop->initialBrushSize()) {
+        Brush reserve(m_brush0->type(),
+                      m_toolLoop->strokeBrushSize(std::clamp(
+                        m_dynamics.minSize, int(Brush::kMinBrushSize), int(Brush::kMaxBrushSize))),
+                      m_brush0->angle());
+        maximum |= reserve.bounds();
+      }
+      if (m_dynamics.angle != DynamicSensor::Static) {
+        const int radius = int(std::ceil(std::hypot(maximum.w, maximum.h) / 2.0));
+        maximum = Rect(-radius, -radius, 2 * radius + 1, 2 * radius + 1);
+      }
+      r1 |= Rect(maximum).offset(strokeBounds.origin());
+      r2 |= Rect(maximum).offset(strokeBounds.x2() - 1, strokeBounds.y2() - 1);
+    }
+
     m_dirtyArea.createUnion(m_dirtyArea, Region(r1.createUnion(r2)));
   }
 
@@ -374,7 +394,7 @@ Stroke::Pt ToolLoopManager::getSpriteStrokePt(const Pointer& pointer)
 {
   // Convert the screen point to a sprite point
   Stroke::Pt spritePoint = pointer.point();
-  spritePoint.size = m_brush0->size();
+  spritePoint.size = m_toolLoop->initialBrushSize();
   spritePoint.angle = m_brush0->angle();
 
   // Center the input to some grid point if needed

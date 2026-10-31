@@ -22,6 +22,7 @@
 #include "app/tools/ink.h"
 #include "app/tools/intertwine.h"
 #include "app/tools/point_shape.h"
+#include "app/tools/shading_brush.h"
 #include "app/tools/tool.h"
 #include "app/tools/tool_loop.h"
 #include "app/ui/context_bar.h"
@@ -124,7 +125,24 @@ BrushPreview::~BrushPreview()
 
 BrushRef BrushPreview::getCurrentBrush()
 {
-  return App::instance()->contextBar()->activeBrush(m_editor->getCurrentEditorTool());
+  auto* tool = m_editor->getCurrentEditorTool();
+  auto* contextBar = App::instance()->contextBar();
+  auto brush = contextBar->activeBrush(tool);
+  const auto& pref = Preferences::instance().tool(tool);
+  if (brush->type() != kImageBrushType && m_editor->getCurrentEditorInk()->isShading() &&
+      pref.shadingOnReentry() &&
+      !pref.shadingOncePerStroke() && tool->getController(0)->isFreehand() &&
+      !tool->getPointShape(0)->isSpray() && contextBar->getShade().size() >= 2 &&
+      m_editor->getSite().tilemapMode() == TilemapMode::Pixels) {
+    if (!m_shadingBrush || m_shadingBrushSourceGen != brush->gen()) {
+      m_shadingBrush = tools::progressive_shading_brush(brush);
+      m_shadingBrushSourceGen = brush->gen();
+    }
+    return m_shadingBrush;
+  }
+  m_shadingBrush.reset();
+  m_shadingBrushSourceGen = -1;
+  return brush;
 }
 
 // static
@@ -172,7 +190,8 @@ void BrushPreview::show(const gfx::Point& screenPos)
   app::Color appCursorColor = pref.cursor.cursorColor();
   m_blackAndWhiteNegative = (appCursorColor.getType() == app::Color::MaskType);
 
-  BrushRef brush = getCurrentBrush();
+  // Preview loops take a nominal brush and apply size compensation themselves.
+  BrushRef brush = App::instance()->contextBar()->activeBrush(m_editor->getCurrentEditorTool());
 
   tools::Tool* tool = m_editor->getCurrentEditorTool();
   const bool isFloodfill = tool->getPointShape(0)->isFloodFill();
@@ -186,7 +205,7 @@ void BrushPreview::show(const gfx::Point& screenPos)
   else if (tilemapMode == TilemapMode::Tiles)
     origBrushBounds = gfx::Rect(grid.tileSize());
   else
-    origBrushBounds = brush->bounds();
+    origBrushBounds = getCurrentBrush()->bounds();
   gfx::Rect brushBounds = origBrushBounds;
 
   // Cursor in the screen (view)

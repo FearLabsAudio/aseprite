@@ -102,7 +102,7 @@ private:
   gfx::Region m_nextDirtyArea;
   DynamicsOptions m_dynamics;
   gfx::PointF m_stabilizerCenter;
-  doc::Brush* m_brush0 = nullptr;
+  doc::BrushRef m_brush0;
 };
 
 }} // namespace app::tools

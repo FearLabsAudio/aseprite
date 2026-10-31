@@ -181,6 +181,48 @@ public:
 };
 
 class ShadingInk : public PaintInk {
+  gfx::Region m_previousFootprint;
+  gfx::Region m_currentFootprint;
+  bool m_onReentry = false;
+  bool m_softEdges = false;
+  gfx::Region m_pendingEdges;
+  gfx::Region m_contactShaded;
+  gfx::Point m_brushOrigin;
+  const doc::Image* m_shapeImage = nullptr;
+  const doc::Image* m_shapeMask = nullptr;
+
+  bool isInterior(int x, int y, ToolLoop* loop) const
+  {
+    int u = x - m_brushOrigin.x;
+    int v = y - m_brushOrigin.y;
+    const int w = loop->getDstImage()->width();
+    const int h = loop->getDstImage()->height();
+    const bool tiledX = int(loop->getTiledMode()) & int(filters::TiledMode::X_AXIS);
+    const bool tiledY = int(loop->getTiledMode()) & int(filters::TiledMode::Y_AXIS);
+    if (tiledX)
+      u = (u % w + w) % w;
+    if (tiledY)
+      v = (v % h + h) % h;
+    auto covered = [&](int bx, int by) {
+      if (!m_shapeImage->bounds().contains(gfx::Point(bx, by)))
+        return false;
+      return m_shapeMask ? m_shapeMask->getPixel(bx, by) != 0 :
+                          m_shapeImage->getPixel(bx, by) != m_shapeImage->maskColor();
+    };
+    // Consider all wrapped copies when a brush is larger than the canvas.
+    for (int by = v; by < m_shapeImage->height(); by += tiledY ? h : m_shapeImage->height()) {
+      for (int bx = u; bx < m_shapeImage->width(); bx += tiledX ? w : m_shapeImage->width()) {
+        bool interior = true;
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dx = -1; dx <= 1; ++dx)
+            interior = interior && covered(bx + dx, by + dy);
+        if (interior)
+          return true;
+      }
+    }
+    return false;
+  }
+
 public:
   ShadingInk() : PaintInk(PaintInk::Simple) {}
 
@@ -189,8 +231,83 @@ public:
   bool isPaint() const override { return true; }
   bool isShading() const override { return true; }
 
+  void beginBrushFootprint() override
+  {
+    if (m_onReentry)
+      m_currentFootprint.clear();
+  }
+
+  void endBrushFootprint() override
+  {
+    if (m_onReentry) {
+      m_contactShaded &= m_currentFootprint;
+      m_previousFootprint = m_currentFootprint;
+    }
+  }
+
+  void prepareForPointShape(ToolLoop* loop, bool firstPoint, int x, int y,
+                            doc::SymmetryIndex symmetry) override
+  {
+    PaintInk::prepareForPointShape(loop, firstPoint, x, y, symmetry);
+    m_softEdges = loop->shadingSoftEdges();
+    if (m_softEdges) {
+      m_brushOrigin = gfx::Point(x, y) - loop->getCelOrigin();
+      m_shapeImage = loop->getBrush()->getSymmetryImage(symmetry);
+      m_shapeMask = loop->getBrush()->getSymmetryMask(symmetry);
+    }
+  }
+
+  void inkHline(int x1, int y, int x2, ToolLoop* loop) override
+  {
+    if (!m_onReentry) {
+      PaintInk::inkHline(x1, y, x2, loop);
+      return;
+    }
+    const gfx::Region scanline(gfx::Rect(x1, y, x2 - x1 + 1, 1));
+    gfx::Region entering(scanline);
+    entering -= m_previousFootprint;
+    entering -= m_currentFootprint;
+    m_currentFootprint |= scanline;
+    if (m_softEdges) {
+      for (int x = x1; x <= x2; ++x) {
+        const gfx::Point pt(x, y);
+        if (m_contactShaded.contains(pt))
+          continue;
+        const gfx::Region pixel(gfx::Rect(x, y, 1, 1));
+        bool shade = isInterior(x, y, loop);
+        if (!shade && entering.contains(pt)) {
+          if (m_pendingEdges.contains(pt)) {
+            m_pendingEdges -= pixel;
+            shade = true;
+          }
+          else {
+            m_pendingEdges |= pixel;
+          }
+        }
+        if (shade) {
+          // Interior coverage completes a pass immediately and consumes any
+          // pending half-pass. Symmetry copies cannot shade the same contact twice.
+          m_pendingEdges -= pixel;
+          m_contactShaded |= pixel;
+          PaintInk::inkHline(x, y, x, loop);
+        }
+      }
+      return;
+    }
+    // Hard-edged sizes can complete a pending edge contact immediately when
+    // pressure/velocity crosses the automatic size threshold.
+    gfx::Region hardCoverage(scanline);
+    hardCoverage -= m_contactShaded;
+    m_contactShaded |= hardCoverage;
+    m_pendingEdges -= hardCoverage;
+    for (const auto& rc : hardCoverage)
+      PaintInk::inkHline(rc.x, rc.y, rc.x2() - 1, loop);
+  }
+
   void prepareInk(ToolLoop* loop) override
   {
+    m_onReentry = loop->shadingOnReentry();
+    m_softEdges = loop->shadingSoftEdges();
     if (loop->getShadingRemap()) {
       if (loop->getBrush()->type() == doc::kImageBrushType) {
         setProc(get_ink_proc<BrushShadingInkProcessing>(loop));

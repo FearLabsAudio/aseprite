@@ -128,6 +128,8 @@ private:
   // Information about current brush
   doc::MaskBoundaries m_brushBoundaries;
   int m_brushGen;
+  doc::BrushRef m_shadingBrush;
+  int m_shadingBrushSourceGen = -1;
 
   gfx::Region m_clippingRegion;
 

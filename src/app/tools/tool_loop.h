@@ -81,6 +81,8 @@ public:
 
   // Returns the brush which will be used with the tool
   virtual Brush* getBrush() = 0;
+  virtual int initialBrushSize() { return getBrush()->size(); }
+  virtual int strokeBrushSize(int nominalSize) const { return nominalSize; }
   virtual void setBrush(const BrushRef& newBrush) = 0;
 
   // Returns the document to which belongs the sprite.
@@ -244,6 +246,8 @@ public:
 
   virtual const Shade& getShade() = 0;
   virtual const doc::Remap* getShadingRemap() = 0;
+  virtual bool shadingOnReentry() const { return false; }
+  virtual bool shadingSoftEdges() const { return false; }
 
   virtual void limitDirtyAreaToViewport(gfx::Region& rgn) = 0;
 
