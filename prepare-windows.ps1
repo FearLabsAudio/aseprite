@@ -202,8 +202,7 @@ function Invoke-KarnPrepare {
     }
     $configuration | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dependencies 'windows-build.json') -Encoding UTF8
     Write-Host ''
-    Write-Host 'Dependencies are ready. Next run:' -ForegroundColor Green
-    Write-Host 'powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1'
+    Write-Host 'Dependencies are ready. Next, double-click build-windows.cmd.' -ForegroundColor Green
 }
 
 # Dot-sourcing exposes helpers for the build script and isolated tests.
