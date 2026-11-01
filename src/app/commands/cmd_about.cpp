@@ -133,7 +133,7 @@ protected:
     auto* chapters = new ComboBox;
     const char* sections[] = { "Welcome", "Quick start", "Controlled shading",
       "Tool presets", "Palette banks", "VERA colors and KARN rules", "Full color Reference",
-      "Converting RGB artwork", "Export layers as 4bpp BMPs", "Export to Karnedit",
+      "Converting RGB artwork", "Export",
       "Saving and compatibility", "Troubleshooting" };
     for (auto section : sections)
       chapters->addItem(section);

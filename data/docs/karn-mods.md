@@ -19,49 +19,32 @@ Save the editable source as .aseprite. Save again after configuring exports to r
 Select the Pencil tool with B, choose Shading Ink, and configure the ramp using Aseprite's existing shade controls. The separate shading-mode dropdown changes how repeated brush coverage affects a pixel:
 
 - Original: standard Aseprite behavior. Overlapping brush stamps can advance a pixel several shades during one stroke.
-- Progressive Shading: each visit advances a pixel one shade. The entire brush must leave that pixel before returning for another step. Repeated passes continue through the ramp.
+- Progressive Shading: each new brush stroke advances one shade.
 - Once Per Stroke: each pixel advances at most one shade while the button is held. Release and begin another stroke for the next step.
 
 Progressive Shading suits gradual buildup and repeated sculpting passes. Once Per Stroke gives a consistent single-step adjustment across a broad sweep. Both support darkening and lightening through the existing mouse-button behavior.
 
-Progressive Shading is the default. Built-in brushes at 1px and 2px have hard edges. At 3px and above, an automatic soft perimeter requires two visits to advance a shade. The perimeter adds two pixels to the displayed size: a 3px brush uses a 5px footprint. Visit counts reset at the end of the stroke.
+Progressive Shading is the default.
 
 Indexed shading follows the selected ramp without changing palette indices through color matching. Spray retains its own distribution controls; use spray width and speed to adjust the marks.
 
 ## Tool presets
 
-Open View > Tool Presets to show or hide the panel below the palette. Drag the divider between the palette and presets to adjust their heights. Choose Float to move presets into a separate window, or Dock to return them to the sidebar.
+Open View > Tool Presets to save and recall your favorite tool and brush settings. The panel docks below the palette or floats in its own window, and remembers its placement.
 
-- + captures the current painting tool and brush settings. Name the preset, review its settings, and choose Save New.
-- Click a preset to recall it. Its highlight clears if you choose a different tool or change settings that no longer match it. Click the preset again to restore its settings. Color changes do not clear presets with Ignore colors enabled.
-- E opens the selected preset for editing. Change its name, brush shape, size, angle, ink, shading mode, or stroke style. The scrollable form also includes spray, fill, gradient, and dynamics controls where supported by the tool. Controls that do not apply to the current settings are dimmed. Save keeps your changes; Cancel leaves the preset and your current tool unchanged. Click the preset to use the edited settings. Check Ignore colors to recall its brush settings while keeping your current colors and shading ramp.
-- The trash button deletes the selected preset after confirmation.
-- Update color(s) saves new colors only to the selected preset. Select a preset, choose your colors, then click Update color(s). Shading presets save the current ramp; other presets save the foreground and background colors. Other presets, brush settings, and the Ignore colors checkbox stay unchanged. If changing colors clears the highlight, Update color(s) still targets the last preset you chose; hover over the button to see its name.
+Click **+** to capture your current settings, name the preset, and choose Save New. Click a preset to use it, **E** to edit it, or the trash button to delete it. The highlight clears when your tool or settings no longer match the preset.
 
-Each preset shows its saved brush size beside its name; image brushes show their dimensions. Swatches show the saved foreground/background colors, or the full ramp for shading presets. An empty swatch with a red diagonal means colors are not included. Scroll horizontally to see longer ramps. Indexed swatches use the current palette; their saved indices stay exact.
+Each preset shows its brush size and saved colors, including the full ramp for shading presets. Enable Ignore colors in the preset dialog to keep your current colors when recalling it; a crossed-out swatch marks this option.
 
-Presets include the tool, brush shape and size, ink, shading mode, spray controls, and dynamics. New presets also capture colors; use Ignore colors in the New or Edit window to leave your working colors unchanged on recall. Image brushes retain their pixels. Shared ink and dynamics follow Aseprite's current sharing settings.
-
-Presets are saved with your application settings and remain available across documents and sessions. The panel remembers whether it is open, docked or floating, along with its divider position and floating window size and position.
+To replace a preset's colors, select it, choose your new colors or ramp, then click Update color(s). This updates only the last preset you chose, even if its highlight has cleared. Presets remain available across documents and sessions.
 
 ## Palette banks
 
-Numbered banks are available on both ordinary image layers and tilemap layers. Each layer retains local indices 0-15 and displays them through its assigned bank, with index 0 transparent. Banks use palette offsets 0, 16, 32, and so on, allowing several 4bpp palettes in one document.
+Use palette banks to work with several 4bpp palettes in one Indexed document. Both ordinary image layers and tilemap layers can have a bank assignment, using local indices 0-15 with index 0 transparent.
 
-Open Palette Banks with the PB button near the tilemap controls:
+Open Palette Banks with the **PB** button. In Layers, name your layers and choose their banks. In Banks, name each bank and review its colors. Changes apply immediately and can be undone. You can also assign a bank through Layer > Properties.
 
-- Layers lists editable layer names and bank assignments.
-- Banks lists each bank's index, name, and swatches.
-
-Edits apply immediately and are undoable. Layer > Properties also provides bank assignment and naming controls.
-
-Selecting a banked layer shows its 16 entries in the color bar. Painting, shading, and the eyedropper use local indices. Layers assigned to the same bank share palette edits. Loading a palette while a banked layer is selected replaces that bank's color entries without replacing the other banks.
-
-A shared tileset can appear on several layers with different bank assignments. Tile edits still affect every use of the shared tile; the layer assignment controls its displayed palette. Converting between ordinary and tilemap layers preserves the bank and local indices.
-
-Document Palette leaves a layer unassigned and excludes it from KARN exports. Groups and Aseprite's built-in Reference layers cannot receive banks. Convert background layers to ordinary layers before assigning one.
-
-Existing indexed artwork must use indices 0-15 before receiving a numbered bank. Assignment preserves those indices rather than remapping a 256-color image. Force KARN rules can convert incompatible artwork after confirmation; review the resulting colors and tiles before saving.
+Select a layer to paint with and edit its palette in the color bar. Layers assigned to the same bank share its colors. Choose Document Palette to leave a layer unbanked; only numbered banks are included in KARN exports.
 
 ## VERA colors and KARN rules
 
@@ -105,37 +88,19 @@ The preview is limited to the incoming image or converted layer. Other artwork r
 
 Accepted conversions remain undoable. Pasting into Full color Reference keeps normal RGB behavior and does not require indexed conversion.
 
-## Export layers as 4bpp BMPs
+## Export
 
-Open File > Export > KARN > Export layers as 4bpp BMPs. Both ordinary image layers and tilemaps are supported; only layers assigned to numbered banks are eligible.
+Start by assigning numbered palette banks to the artwork layers you want to export. The workflow is BMPs first, then TileKits, with an optional collage to carry the scene layout into KarnEdit.
 
-Choose the BMP output folder, base name, and source layers. All, Visible, and None provide quick selection. Hidden layers may also be selected explicitly.
+1. **Export the BMPs.** Open File > Export > KARN > Export layers as 4bpp BMPs. Choose your layers, BMP output folder, and filenames. Enable Merge layers sharing a palette bank if you want those layers combined into one BMP. Click Export.
 
-Default filenames combine the base name with the bank name. Separate layers sharing a bank also receive a layer name. Review or edit each filename; Reset filenames regenerates them from the current naming choices.
+2. **Set up the TileKits.** Open File > Export > KARN > Export to Karnedit. Choose your game workspace, TileKit folder, and a JSON destination for each BMP. Each BMP gets its own TileKit, which references that image. BMPs and TileKits can live in separate folders. If any BMPs are missing or out of date, the shared BMP export window opens first so you can update them.
 
-Enable Merge layers sharing a palette bank to produce one BMP per selected bank. Selected layers composite in canvas order, with transparency revealing lower selected layers in that bank. Different banks remain separate. Merging requires Normal blending, full layer/group/cel opacity, and zero cel Z-index.
+3. **Include a collage if needed, then export.** Export Collage becomes available when visible artwork layers use multiple numbered palette banks, and is checked by default. Leave it checked and choose the collage JSON destination to export the scene layout. Clear it for TileKits only. Click Export to write the files.
 
-BMPs preserve the arranged artwork and exact local indices. The canvas origin is retained, with dimensions padded to whole 8 x 8 tiles. Artwork is not trimmed or packed into a tileset. Use Aseprite's existing tileset export when you need the tileset itself.
+For later updates, keep the same destinations and confirm the overwrite prompt. Choose new paths to create separate resources. Save your .aseprite file after setting up exports so it remembers the choices for next time.
 
-Indices 1 and 2 are preserved on export, with a warning: KarnEdit treats them as transparent on import. Move affected artwork to other indices if those pixels must remain visible in KarnEdit.
-
-Export confirms before overwriting existing files. Retain destinations for routine updates, or choose new paths for a separate resource set. Selection, merge settings, filenames, and folders are remembered; save the .aseprite file to retain them between sessions.
-
-## Export to Karnedit
-
-File > Export > KARN > Export to Karnedit uses the shared BMP export setup and creates one bitmap TileKit per BMP. BMPs and TileKit JSON files can be kept in different folders.
-
-Missing or outdated BMPs open the BMP export step first. Current BMPs are reused without repeating that setup. You can also export BMPs manually before running Export to Karnedit.
-
-Choose the game workspace, TileKit folder, and JSON destination for each source BMP. BMP exports reopens the shared bitmap setup. Reset TileKit paths derives destinations from the current folder and BMP names.
-
-Export Collage is available when visible banked layers use multiple banks, and is enabled by default when available. Disable it for TileKit-only output. Collages use 8 x 8 cells and support layouts up to 64 x 64 cells.
-
-Collage overlap is resolved per tile. The topmost nonempty tile wins in full, including its transparent pixels; lower tiles do not show through those holes. A completely empty upper tile is skipped. Each cell therefore retains a single source palette.
-
-To composite pixels from same-bank layers, explicitly merge their BMPs in the shared export step. Unmerged sources retain the topmost-tile behavior. Exclude hidden layers from merged collage sources when they should not contribute to the scene.
-
-Export updates existing destinations while retaining TileKit brushes and resource links. New destinations create new resources. Existing files require overwrite/update confirmation. Save the .aseprite source afterward to retain the mappings for the next update.
+KarnEdit treats indices 1 and 2 as transparent on import. Export preserves those indices and warns if they are used.
 
 ## Saving and compatibility
 
@@ -153,7 +118,7 @@ Global color-mode changes and palette remapping are restricted while bank assign
 
 - Missing export layers: check for a numbered bank assignment. Collages also require the layer and its parent groups to be visible.
 - Export Collage unavailable: at least two distinct banks must be used by visible layers. TileKit export remains available.
-- Progressive shading does not advance: move the entire brush footprint off the pixel before returning. The soft perimeter needs two visits within the stroke.
+- Progressive shading does not advance: move the brush away before passing over the area again.
 - Unexpected collage transparency: unmerged sources replace entire tiles. Merge same-bank BMP sources when pixel compositing is intended.
 - Missing colors in KarnEdit: inspect reserved indices 1 and 2 and review the export warning.
 - Rejected edits: check Force KARN rules against the document's indices, color mode, and tile settings.
