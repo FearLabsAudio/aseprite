@@ -54,6 +54,7 @@ void ColorShades::reverseShadeColors()
 {
   std::reverse(m_shade.begin(), m_shade.end());
   invalidate();
+  Change();
 }
 
 doc::Remap* ColorShades::createShadeRemap(bool left)
@@ -91,6 +92,7 @@ void ColorShades::setShade(const Shade& shade)
 {
   m_shade = shade;
   invalidate();
+  Change();
   parent()->parent()->layout();
 }
 
@@ -171,6 +173,7 @@ bool ColorShades::onProcessMessage(ui::Message* msg)
 
         m_dragIndex = -1;
         invalidate();
+        Change();
 
         ClickEvent ev(button);
         Click(ev);

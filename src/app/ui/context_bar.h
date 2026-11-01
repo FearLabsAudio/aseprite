@@ -87,6 +87,7 @@ public:
   doc::Remap* createShadeRemap(bool left);
   void reverseShadeColors();
   Shade getShade() const;
+  void setShade(const Shade& shade);
 
   void setInkType(tools::InkType type);
 
@@ -98,6 +99,8 @@ public:
   render::DitheringMatrix ditheringMatrix();
   render::DitheringAlgorithmBase* ditheringAlgorithm();
   render::GradientType gradientType();
+  std::string gradientDitheringName() const;
+  void setGradientOptions(render::GradientType type, const std::string& ditheringName);
 
   // For freehand with dynamics
   const tools::DynamicsOptions& getDynamics() const;
@@ -108,6 +111,7 @@ public:
 
   // Signals
   obs::signal<void()> BrushChange;
+  obs::signal<void()> ToolSettingsChange;
   obs::signal<void(const FontInfo&, FontEntry::From)> FontChange;
 
 protected:

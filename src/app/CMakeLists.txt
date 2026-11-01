@@ -263,6 +263,7 @@ target_sources(app-lib PRIVATE
   active_site_handler.cpp
   app.cpp
   app_brushes.cpp
+  tool_presets.cpp
   app_menus.cpp
   check_update.cpp
   cli/app_options.cpp
@@ -376,6 +377,7 @@ target_sources(app-lib PRIVATE
   color_utils.cpp
   commands/apply.cpp
   commands/cmd_about.cpp
+  commands/cmd_tool_presets.cpp
   commands/cmd_add_color.cpp
   commands/cmd_advanced_mode.cpp
   commands/cmd_background_from_layer.cpp

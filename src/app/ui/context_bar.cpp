@@ -678,6 +678,7 @@ public:
     addChild(&m_shade);
 
     m_shade.setText(Strings::context_bar_select_palette_color());
+    m_shade.Change.connect([this] { Change(); });
     m_shade.setMinColors(2);
     m_conn = colorBar->ChangeSelection.connect([this] { onChangeColorBarSelection(); });
 
@@ -688,6 +689,8 @@ public:
   }
 
   ~InkShadesField() { saveShades(); }
+
+  obs::signal<void()> Change;
 
   void reverseShadeColors() { m_shade.reverseShadeColors(); }
 
@@ -2090,6 +2093,8 @@ ContextBar::ContextBar(TooltipManager* tooltipManager, ColorBar* colorBar)
   addChild(m_paintBucketSettings = new PaintBucketSettingsField());
   addChild(m_gradientType = new GradientTypeField());
   addChild(m_ditheringSelector = new DitheringSelector(DitheringSelector::SelectMatrix));
+  m_gradientType->ItemChange.connect([this](ButtonSet::Item*) { ToolSettingsChange(); });
+  m_ditheringSelector->Change.connect([this] { ToolSettingsChange(); });
   m_ditheringSelector->setUseCustomWidget(false); // Disable custom widget because the context bar
                                                   // is too small
 
@@ -2100,6 +2105,7 @@ ContextBar::ContextBar(TooltipManager* tooltipManager, ColorBar* colorBar)
   addChild(m_inkOpacity = new InkOpacityField());
   addChild(m_shadingMode = new ShadingModeField());
   addChild(m_inkShades = new InkShadesField(colorBar));
+  m_inkShades->Change.connect([this] { ToolSettingsChange(); });
 
   addChild(m_eyedropperField = new EyedropperField());
 
@@ -2753,6 +2759,24 @@ BrushSlot ContextBar::createBrushSlotFromPreferences()
 Shade ContextBar::getShade() const
 {
   return m_inkShades->getShade();
+}
+
+void ContextBar::setShade(const Shade& shade)
+{
+  m_inkShades->setShade(shade);
+}
+
+std::string ContextBar::gradientDitheringName() const
+{
+  const auto* item = m_ditheringSelector->getSelectedItem();
+  return item ? item->text() : std::string();
+}
+
+void ContextBar::setGradientOptions(render::GradientType type, const std::string& ditheringName)
+{
+  m_gradientType->setSelectedItem(int(type));
+  m_ditheringSelector->setSelectedItemByName(ditheringName);
+  ToolSettingsChange();
 }
 
 doc::Remap* ContextBar::createShadeRemap(bool left)

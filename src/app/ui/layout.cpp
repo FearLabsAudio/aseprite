@@ -18,6 +18,7 @@
 #include "app/ui/status_bar.h"
 #include "app/ui/timeline/timeline.h"
 #include "app/ui/toolbar.h"
+#include "app/ui/tool_presets_dock.h"
 #include "app/ui/workspace.h"
 #include "app/xml_document.h"
 #include "app/xml_exception.h"
@@ -108,7 +109,7 @@ static void load_dock_layout(const XMLElement* elem, Dock* dock)
     size.h = base::convert_to<int>(std::string(heightStr));
 
   if (elemName == "colorbar") {
-    widget = win->colorBar();
+    widget = win->toolPresetsDock();
   }
   else if (elemName == "contextbar") {
     widget = win->getContextBar();

@@ -48,6 +48,7 @@ public:
   };
 
   obs::signal<void(ClickEvent&)> Click;
+  obs::signal<void()> Change;
 
 private:
   void onInitTheme(ui::InitThemeEvent& ev) override;

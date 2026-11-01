@@ -38,6 +38,7 @@
 #include "app/ui/status_bar.h"
 #include "app/ui/timeline/timeline.h"
 #include "app/ui/toolbar.h"
+#include "app/ui/tool_presets_dock.h"
 #include "app/ui/workspace.h"
 #include "app/ui/workspace_tabs.h"
 #include "app/ui_context.h"
@@ -136,6 +137,7 @@ void MainWindow::initialize()
   m_previewEditor = std::make_unique<PreviewEditorWindow>();
   m_colorBar = std::make_unique<ColorBar>(m_tooltipManager);
   m_contextBar = std::make_unique<ContextBar>(m_tooltipManager, m_colorBar.get());
+  m_toolPresetsDock = std::make_unique<ToolPresetsDock>(m_colorBar.get());
 
   // The timeline (AniControls) tooltips will use the keyboard
   // shortcuts loaded above.
@@ -159,7 +161,7 @@ void MainWindow::initialize()
 
   // IDs to create UI layouts from a Dock (see app::Layout
   // constructor).
-  m_colorBar->setId("colorbar");
+  m_toolPresetsDock->setId("colorbar");
   m_contextBar->setId("contextbar");
   m_statusBar->setId("statusbar");
   m_timeline->setId("timeline");
@@ -235,6 +237,7 @@ MainWindow::~MainWindow()
       m_workspace->removeView(m_homeView.get());
     m_homeView.reset();
   }
+  m_toolPresetsDock.reset();
   m_contextBar.reset();
   m_previewEditor.reset();
 
@@ -400,7 +403,7 @@ void MainWindow::setDefaultLayout()
                                                m_colorBar->sizeHint().w);
 
   m_customizableDock->resetDocks();
-  m_customizableDock->dock(ui::LEFT, m_colorBar.get(), gfx::Size(colorBarWidth, 0));
+  m_customizableDock->dock(ui::LEFT, m_toolPresetsDock.get(), gfx::Size(colorBarWidth, 0));
   m_customizableDock->dock(ui::BOTTOM, m_statusBar.get());
   m_customizableDock->center()->dock(ui::TOP, m_contextBar.get());
   m_customizableDock->center()->dock(ui::RIGHT, m_toolBar.get());
@@ -455,7 +458,7 @@ void MainWindow::setMirroredDefaultLayout()
                                          m_colorBar->sizeHint().w);
 
   m_customizableDock->resetDocks();
-  m_customizableDock->dock(ui::RIGHT, m_colorBar.get(), gfx::Size(colorBarWidth, 0));
+  m_customizableDock->dock(ui::RIGHT, m_toolPresetsDock.get(), gfx::Size(colorBarWidth, 0));
   m_customizableDock->dock(ui::BOTTOM, m_statusBar.get());
   m_customizableDock->center()->dock(ui::TOP, m_contextBar.get());
   m_customizableDock->center()->dock(ui::LEFT, m_toolBar.get());
@@ -493,8 +496,15 @@ void MainWindow::dataRecoverySessionsAreReady()
 
 bool MainWindow::onProcessMessage(ui::Message* msg)
 {
-  if (msg->type() == kOpenMessage)
+  if (msg->type() == kOpenMessage) {
     showHomeOnOpen();
+    // Restore floating windows after the desktop display and initial layout
+    // have been established by Manager::_openWindow().
+    ui::execute_from_ui_thread([] {
+      if (auto* win = App::instance()->mainWindow())
+        win->toolPresetsDock()->restore();
+    });
+  }
 
   return Window::onProcessMessage(msg);
 }
@@ -733,6 +743,7 @@ DropTabResult MainWindow::onDropTab(Tabs* tabs,
 
 void MainWindow::configureWorkspaceLayout()
 {
+  m_toolPresetsDock->fitDockWidth();
   // First layout to get the bounds of some widgets
   layout();
 
@@ -747,7 +758,7 @@ void MainWindow::configureWorkspaceLayout()
   m_menuBar->setVisible(showMenu);
   m_notifications->setVisible(normal && m_notifications->hasNotifications());
   m_tabsBar->setVisible(normal);
-  m_colorBar->setVisible(normal && isDoc);
+  m_toolPresetsDock->setVisible(normal && isDoc);
   m_colorBarResizeConn = m_customizableDock->Resize.connect(&MainWindow::saveColorBarConfiguration,
                                                             this);
   m_toolBar->setVisible(normal && isDoc);

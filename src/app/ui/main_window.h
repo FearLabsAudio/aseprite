@@ -42,6 +42,7 @@ class PreviewEditorWindow;
 class StatusBar;
 class Timeline;
 class ToolBar;
+class ToolPresetsDock;
 class Workspace;
 class WorkspaceTabs;
 
@@ -65,6 +66,7 @@ public:
   WorkspaceTabs* getTabsBar() { return m_tabsBar.get(); }
   Timeline* getTimeline() { return m_timeline.get(); }
   Workspace* getWorkspace() { return m_workspace.get(); }
+  ToolPresetsDock* toolPresetsDock() { return m_toolPresetsDock.get(); }
   ColorBar* colorBar() { return m_colorBar.get(); }
   ToolBar* toolBar() { return m_toolBar.get(); }
   PreviewEditorWindow* getPreviewEditor() { return m_previewEditor.get(); }
@@ -148,6 +150,7 @@ private:
   std::unique_ptr<LayoutSelector> m_layoutSelector;
   std::unique_ptr<StatusBar> m_statusBar;
   std::unique_ptr<ColorBar> m_colorBar;
+  std::unique_ptr<ToolPresetsDock> m_toolPresetsDock;
   std::unique_ptr<ContextBar> m_contextBar;
   std::unique_ptr<ToolBar> m_toolBar;
   std::unique_ptr<WorkspaceTabs> m_tabsBar;

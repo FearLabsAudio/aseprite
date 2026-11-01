@@ -28,6 +28,22 @@ Progressive Shading is the default. Built-in brushes at 1px and 2px have hard ed
 
 Indexed shading follows the selected ramp without changing palette indices through color matching. Spray retains its own distribution controls; use spray width and speed to adjust the marks.
 
+## Tool presets
+
+Open View > Tool Presets to show or hide the panel below the palette. Drag the divider between the palette and presets to adjust their heights. Choose Float to move presets into a separate window, or Dock to return them to the sidebar.
+
+- + captures the current painting tool and brush settings. Name the preset, review its settings, and choose Save New.
+- Click a preset to recall it. Its highlight clears if you choose a different tool or change settings that no longer match it. Click the preset again to restore its settings. Color changes do not clear presets with Ignore colors enabled.
+- E opens the selected preset for editing. Change its name, brush shape, size, angle, ink, shading mode, or stroke style. The scrollable form also includes spray, fill, gradient, and dynamics controls where supported by the tool. Controls that do not apply to the current settings are dimmed. Save keeps your changes; Cancel leaves the preset and your current tool unchanged. Click the preset to use the edited settings. Check Ignore colors to recall its brush settings while keeping your current colors and shading ramp.
+- The trash button deletes the selected preset after confirmation.
+- Update color(s) saves new colors only to the selected preset. Select a preset, choose your colors, then click Update color(s). Shading presets save the current ramp; other presets save the foreground and background colors. Other presets, brush settings, and the Ignore colors checkbox stay unchanged. If changing colors clears the highlight, Update color(s) still targets the last preset you chose; hover over the button to see its name.
+
+Each preset shows its saved brush size beside its name; image brushes show their dimensions. Swatches show the saved foreground/background colors, or the full ramp for shading presets. An empty swatch with a red diagonal means colors are not included. Scroll horizontally to see longer ramps. Indexed swatches use the current palette; their saved indices stay exact.
+
+Presets include the tool, brush shape and size, ink, shading mode, spray controls, and dynamics. New presets also capture colors; use Ignore colors in the New or Edit window to leave your working colors unchanged on recall. Image brushes retain their pixels. Shared ink and dynamics follow Aseprite's current sharing settings.
+
+Presets are saved with your application settings and remain available across documents and sessions. The panel remembers whether it is open, docked or floating, along with its divider position and floating window size and position.
+
 ## Palette banks
 
 Numbered banks are available on both ordinary image layers and tilemap layers. Each layer retains local indices 0-15 and displays them through its assigned bank, with index 0 transparent. Banks use palette offsets 0, 16, 32, and so on, allowing several 4bpp palettes in one document.
