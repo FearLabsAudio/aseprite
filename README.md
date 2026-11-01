@@ -6,8 +6,89 @@ KARN MODS adds palette-bank editing, controlled shading, and KarnEdit exports to
 
 This guide is also available in **Help > ABOUT KARN MODS** inside the editor.
 
+## Build on Windows 11
+
+Two scripts prepare the dependencies and build your own copy. You do not need
+Git, Visual Studio, CMake, or Ninja installed beforehand. These instructions
+support **Windows 11 on Intel/AMD x64 PCs**; Windows on ARM is not supported by
+these scripts. Allow several GB of downloads and roughly 20 GB of free space.
+Installing Microsoft's build tools requires administrator approval.
+
+1. Create a folder you can write to, such as `C:\KarnBuild`. Avoid OneDrive and
+   Program Files. Save [prepare-windows.ps1](prepare-windows.ps1) and
+   [build-windows.ps1](build-windows.ps1) into that folder: open each file on
+   GitHub and use **Download raw file**. Keep their `.ps1` extensions.
+   If you already cloned this repository, use the scripts in its root instead.
+2. Open that folder in File Explorer, right-click its background, and choose
+   **Open in Terminal**. Run:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\prepare-windows.ps1
+   ```
+
+   Setup reuses compatible installed tools. If needed, it opens Microsoft's
+   Visual Studio 2022 Build Tools installer with the required C++ tools, Windows
+   SDK, CMake, and Ninja selected. Approve the Windows prompt, review Microsoft's
+   terms, and complete the installer. If asked to restart, restart Windows and
+   run the same command again.
+
+   Setup also downloads portable Git if needed, obtains the `karn-mods` source
+   and its submodules, and prepares the matching Skia library. Wait for
+   **Dependencies are ready** before continuing. Downloads are cached in `.deps`.
+3. Build:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
+   ```
+
+   This creates an optimized Release build. The first build takes longer;
+   later builds reuse completed work. When it
+   finishes, the script prints the full path to `aseprite.exe`. With the two
+   standalone scripts, this is `source\build\windows-karn\bin\aseprite.exe`.
+   Inside an existing clone, it is `build\windows-karn\bin\aseprite.exe`.
+   Open it directly or create a shortcut. Keep the entire `bin` folder together.
+
+The commands use Windows' included PowerShell and only bypass script execution
+policy for that invocation; they do not change the computer's saved policy.
+Managed workplace policies may still prevent running scripts or installing tools.
+You do not need to run Terminal as administrator.
+
+### Rebuilding and troubleshooting
+
+- Close the custom Aseprite before rebuilding. The script will not close it for you.
+  If Windows still prevents replacement, check that the folder is writable and
+  no other application is using the executable, or choose a new build folder.
+- Run `build-windows.ps1` again after editing or updating the source. The scripts
+  do not pull updates, switch branches, or discard local changes in existing clones.
+  To update the standalone checkout, use `git -C .\source pull --ff-only`, then
+  rerun setup and build. If setup supplied portable Git, replace `git` with
+  `.\.deps\mingit\cmd\git.exe`. In an existing clone, use `git pull --ff-only`.
+- Rerun setup after moving the folder, changing dependencies, or an interrupted
+  download. If you downloaded GitHub's source ZIP, setup creates a separate Git
+  checkout in `source`; it does not build or overwrite the ZIP's files.
+- If memory is tight, add `-Jobs 2` to the build command. To check the installed
+  tools without compiling, add `-CheckOnly`. Advanced users can select another
+  build folder with `-BuildDirectory "C:\KarnBuild\another-build"`.
+- Setup and build logs are saved as `.build\windows-setup.log` and
+  `.build\windows-build.log` beside the scripts. If setup fails to download,
+  check your connection and access to GitHub and Microsoft, then rerun it.
+  A checksum error identifies a cached file to remove before trying again.
+- These scripts use a separate `build\windows-karn` folder by default, so an
+  existing `build\bin` installation and its shortcut remain available.
+
+### License and sharing
+
+These scripts build a local copy; they do not download or distribute an Aseprite
+executable. Aseprite's maintainer has
+[clarified that public source forks, including modified source, are permitted](https://github.com/aseprite/aseprite/issues/2266).
+Keep the original license and copyright notices. **Do not distribute compiled
+Aseprite/KARN Mods binaries without separate permission from Igara Studio.**
+See the [Aseprite EULA](EULA.txt) and [official FAQ](https://www.aseprite.org/faq/).
+Microsoft's tools and other dependencies retain their own license terms.
+
 ## User guide
 
+- [Build on Windows 11](#build-on-windows-11)
 - [Quick start](#quick-start)
 - [Controlled shading](#controlled-shading)
 - [Tool presets](#tool-presets)

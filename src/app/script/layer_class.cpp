@@ -511,9 +511,16 @@ int Layer_set_paletteBank(lua_State* L)
   const lua_Integer bank = luaL_checkinteger(L, 2);
   if (bank < -2 || bank > 15)
     return luaL_error(L, "Palette bank must be -2 (Full color Reference), -1, or 0-15");
-  Tx tx(layer->sprite());
-  set_layer_palette_bank(tx, layer, bank);
-  tx.commit();
+  try {
+    Tx tx(layer->sprite());
+    set_layer_palette_bank(tx, layer, bank);
+    tx.commit();
+  }
+  catch (const std::exception& e) {
+    // Lua's protected call cannot turn a C++ exception into its message.
+    // Unwind the transaction first, then put the actual explanation on the stack.
+    return luaL_error(L, "%s", e.what());
+  }
   return 0;
 }
 
@@ -525,14 +532,19 @@ int Layer_convertPaletteBank(lua_State* L)
   const lua_Integer bank = luaL_checkinteger(L, 2);
   if (bank < -2 || bank > 15)
     return luaL_error(L, "Palette bank must be -2 (Full color Reference), -1, or 0-15");
-  IndexedConversionOptions options;
-  if (!choose_palette_bank_conversion(layer, int(bank), options)) {
-    lua_pushboolean(L, false);
-    return 1;
+  try {
+    IndexedConversionOptions options;
+    if (!choose_palette_bank_conversion(layer, int(bank), options)) {
+      lua_pushboolean(L, false);
+      return 1;
+    }
+    Tx tx(layer->sprite());
+    set_layer_palette_bank(tx, layer, int(bank), options);
+    tx.commit();
   }
-  Tx tx(layer->sprite());
-  set_layer_palette_bank(tx, layer, int(bank), options);
-  tx.commit();
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
+  }
   lua_pushboolean(L, true);
   return 1;
 }

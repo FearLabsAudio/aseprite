@@ -1,5 +1,17 @@
 # Aseprite Tests
 
+The Windows setup/build scripts have a separate test suite that uses the
+PowerShell included with Windows 11. From the repository root, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/windows-build-scripts.Tests.ps1
+```
+
+These tests use local fixtures for downloads, Git initialization, and installers;
+they do not install software or need administrator rights. Fixtures are kept
+under `.build/windows-script-tests`. A clean-machine installation still needs
+an end-to-end check with network access and Microsoft's actual installer.
+
 Test suite for [Aseprite](https://github.com/aseprite/aseprite)
 to avoid breaking backward compatibility.
 
