@@ -16,6 +16,7 @@
 #include "doc/frame.h"
 #include "doc/image_buffer.h"
 #include "doc/image_ref.h"
+#include "doc/pixel_format.h"
 #include "gfx/rect.h"
 #include "render/extra_type.h"
 
@@ -44,7 +45,8 @@ public:
               const gfx::Rect& bounds,
               const gfx::Size& imageSize,
               const doc::frame_t frame,
-              const int opacity);
+              const int opacity,
+              doc::PixelFormat pixelFormat = doc::IMAGE_BITMAP);
   void reset();
 
   Purpose purpose() const { return m_purpose; }

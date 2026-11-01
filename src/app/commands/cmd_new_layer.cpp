@@ -33,6 +33,7 @@
 #include "app/util/clipboard.h"
 #include "app/util/new_image_from_mask.h"
 #include "doc/layer.h"
+#include "doc/karn_rules.h"
 #include "doc/layer_tilemap.h"
 #include "doc/primitives.h"
 #include "doc/sprite.h"
@@ -210,6 +211,10 @@ void NewLayerCommand::onExecute(Context* context)
                                                         doc::Grid(params().gridBounds()));
   tilesetInfo.baseIndex = 1;
   tilesetInfo.matchFlags = 0; // TODO default flags?
+  if (doc::force_karn_rules(sprite)) {
+    tilesetInfo.grid = doc::Grid(gfx::Size(8, 8));
+    tilesetInfo.matchFlags = doc::kKarnMatchFlags;
+  }
 
   // If params specify to ask the user about the name...
   if (params().ask() && context->isUIAvailable()) {

@@ -8,10 +8,17 @@
 #include "doc/palette.h"
 #include "doc/sprite.h"
 #include "doc/tileset.h"
+#include "doc/karn_rules.h"
 
 namespace doc {
 
 inline constexpr const char* kPaletteBankProperties = "karn.palette-banks.v1";
+
+inline bool uses_local_palette(const Layer* layer)
+{
+  return layer && !layer->isRgbReference() &&
+         (layer->paletteBank() >= 0 || force_karn_rules(layer->sprite()));
+}
 
 inline bool has_palette_banks(const Sprite* sprite)
 {
@@ -25,6 +32,8 @@ inline bool tileset_uses_palette_banks(const Tileset* tileset)
 {
   if (!tileset || !tileset->sprite())
     return false;
+  if (force_karn_rules(tileset->sprite()))
+    return true;
   for (const auto* layer : tileset->sprite()->allTilemaps())
     if (layer->tileset() == tileset && layer->paletteBank() >= 0)
       return true;
@@ -72,10 +81,10 @@ inline Palette make_bank_palette(const Palette& source, int bank)
 // Merge a local palette edit without changing any other bank or its reserved slot.
 inline Palette merge_bank_palette(const Layer* layer, frame_t frame, const Palette& local)
 {
-  if (!layer || layer->paletteBank() < 0)
+  if (!uses_local_palette(layer))
     return local;
   Palette result(*layer->sprite()->palette(frame));
-  const int bank = layer->paletteBank();
+  const int bank = std::max(0, layer->paletteBank());
   if (result.size() < (bank + 1) * 16)
     result.resize((bank + 1) * 16);
   for (int i = 1; i < 16 && i < local.size(); ++i)

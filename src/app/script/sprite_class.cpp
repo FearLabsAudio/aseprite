@@ -63,6 +63,7 @@
 #include "doc/sprite.h"
 #include "doc/tag.h"
 #include "doc/tileset.h"
+#include "doc/karn_rules.h"
 #include "doc/tilesets.h"
 #include "undo/undo_state.h"
 
@@ -488,7 +489,7 @@ int Sprite_newCel(lua_State* L)
     if (srcImage)
       image.reset(Image::createCopy(srcImage));
     else if (layer->isImage())
-      image.reset(Image::create(sprite->spec()));
+      image.reset(Image::create(layer->pixelFormat(), sprite->width(), sprite->height()));
     else {
       // TODO copy any other kind of cel data
     }
@@ -657,6 +658,8 @@ int Sprite_newTileset(lua_State* L)
     }
 
     tileset = new Tileset(sprite, grid, ntiles);
+    if (doc::force_karn_rules(sprite))
+      tileset->setMatchFlags(doc::kKarnMatchFlags);
   }
 
   Tx tx(sprite);

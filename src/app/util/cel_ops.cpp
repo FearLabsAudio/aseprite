@@ -305,7 +305,7 @@ Cel* create_cel_copy(CmdSequence* cmds,
                      const frame_t dstFrame)
 {
   gfx::Size dstSize(0, 0);
-  doc::PixelFormat dstPixelFormat = dstSprite->pixelFormat();
+  doc::PixelFormat dstPixelFormat = dstLayer->pixelFormat();
 
   const Image* srcImage = srcCel->image();
   if (srcImage && dstLayer->paletteBank() >= 0 && srcImage->pixelFormat() == IMAGE_INDEXED &&
@@ -435,10 +435,10 @@ Cel* create_cel_copy(CmdSequence* cmds,
                                     srcCel->bounds(),
                                     tilemap);
   }
-  else if ((dstSprite->pixelFormat() != srcImage->pixelFormat()) ||
+  else if ((dstLayer->pixelFormat() != srcImage->pixelFormat()) ||
            // If both images are indexed but with different palette, we can
            // convert the source cel to RGB first.
-           (dstLayer->paletteBank() < 0 && dstSprite->pixelFormat() == IMAGE_INDEXED && srcImage->pixelFormat() == IMAGE_INDEXED &&
+           (dstLayer->paletteBank() < 0 && dstLayer->pixelFormat() == IMAGE_INDEXED && srcImage->pixelFormat() == IMAGE_INDEXED &&
             srcCel->sprite()
               ->palette(srcCel->frame())
               ->countDiff(dstSprite->palette(dstFrame), nullptr, nullptr))) {
@@ -456,10 +456,10 @@ Cel* create_cel_copy(CmdSequence* cmds,
 
     render::convert_pixel_format(tmpImage.get(),
                                  dstCel->image(),
-                                 IMAGE_INDEXED,
+                                 dstLayer->pixelFormat(),
                                  render::Dithering(),
-                                 dstSprite->rgbMap(dstFrame),
-                                 dstSprite->palette(dstFrame),
+                                 dstLayer->rgbMap(dstFrame),
+                                 dstLayer->palette(dstFrame),
                                  srcCel->layer()->isBackground(),
                                  dstSprite->transparentColor());
   }
@@ -481,7 +481,7 @@ Cel* create_cel_copy(CmdSequence* cmds,
     std::unique_ptr<Cel> dstCel2(new Cel(
       dstFrame,
       ImageRef(
-        Image::create(dstSprite->pixelFormat(), std::ceil(srcBounds.w), std::ceil(srcBounds.h)))));
+        Image::create(dstLayer->pixelFormat(), std::ceil(srcBounds.w), std::ceil(srcBounds.h)))));
     algorithm::resize_image(dstCel->image(),
                             dstCel2->image(),
                             algorithm::RESIZE_METHOD_NEAREST_NEIGHBOR,

@@ -709,6 +709,8 @@ void ComboBox::updateListBoxPos()
 void ComboBox::onChange()
 {
   Change();
+  if (!m_window)
+    Confirm();
 }
 
 void ComboBox::onEntryChange()
@@ -729,6 +731,7 @@ void ComboBox::onOpenListBox()
 void ComboBox::onCloseListBox()
 {
   CloseListBox();
+  Confirm();
 }
 
 void ComboBox::onEnterOnEditableEntry()

@@ -18,6 +18,7 @@
 #include "app/i18n/strings.h"
 #include "app/modules/palettes.h"
 #include "doc/sprite.h"
+#include "doc/karn_rules.h"
 #include "ui/manager.h"
 #include "ui/system.h"
 
@@ -52,6 +53,8 @@ Transaction::Transaction(Context* ctx, Doc* doc, const std::string& label, Modif
   // SpritePosition. Sub-cmds are executed then one by one, in
   // Transaction::execute()
   m_cmds->execute(m_ctx);
+  if (doc::force_karn_rules(m_doc->sprite()))
+    m_karnImages = karn_image_versions(m_doc->sprite());
 }
 
 Transaction::~Transaction()
@@ -89,6 +92,14 @@ void Transaction::commit()
   TX_TRACE("TX: Commit <%s>\n", m_cmds->label().c_str());
 
   m_doc->notifyBeforeCommitTransaction();
+
+  // A failed constraint rolls back with this transaction, including paste,
+  // filters and script edits. Ordinary documents take no validation path.
+  if (doc::force_karn_rules(m_doc->sprite())) {
+    const auto error = karn_rules_violation(m_doc->sprite(), m_karnImages);
+    if (!error.empty())
+      throw std::runtime_error(error + " Disable Force KARN rules to use other settings.");
+  }
 
   m_cmds->updateSpritePositionAfter();
   const SpritePosition sprPos = m_cmds->spritePositionAfterExecute();

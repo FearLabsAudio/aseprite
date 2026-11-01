@@ -93,6 +93,9 @@ public:
   obs::signal<void()> Change;
   obs::signal<void()> OpenListBox;
   obs::signal<void()> CloseListBox;
+  // Selection changed with the popup closed, or its selection was confirmed.
+  // Safe for clients that need to open a modal dialog after choosing an item.
+  obs::signal<void()> Confirm;
 
 protected:
   bool onProcessMessage(Message* msg) override;

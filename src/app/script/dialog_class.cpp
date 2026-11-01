@@ -1023,6 +1023,12 @@ int Dialog_combobox(lua_State* L)
     }
     lua_pop(L, 1);
 
+    type = lua_getfield(L, 2, "onconfirm");
+    if (type == LUA_TFUNCTION) {
+      Dialog_connect_signal(L, 1, widget->Confirm, [](lua_State* L) {});
+    }
+    lua_pop(L, 1);
+
     type = lua_getfield(L, 2, "onchange");
     if (type == LUA_TFUNCTION) {
       Dialog_connect_signal(L, 1, widget->Change, [](lua_State* L) {

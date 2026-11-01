@@ -28,7 +28,7 @@ void rasterize(doc::Image* dst, const doc::Cel* cel, const int x, const int y, c
   ASSERT(sprite);
 
   if (clear)
-    dst->clear(sprite->transparentColor());
+    dst->clear(dst->pixelFormat() == IMAGE_RGB ? 0 : sprite->transparentColor());
 
   int t;
   int opacity;
@@ -49,7 +49,7 @@ void rasterize(doc::Image* dst, const doc::Cel* cel, const int x, const int y, c
                      !clear); // Compositing onto a regular layer needs global indices.
   }
   else {
-    if (clear)
+    if (clear && dst->pixelFormat() == cel->image()->pixelFormat())
       copy_image(dst, cel->image(), x + cel->x(), y + cel->y());
     else
       composite_image(dst,
@@ -57,8 +57,8 @@ void rasterize(doc::Image* dst, const doc::Cel* cel, const int x, const int y, c
                       sprite->palette(cel->frame()),
                       x + cel->x(),
                       y + cel->y(),
-                      opacity,
-                      cel->layer()->blendMode());
+                      clear ? 255 : opacity,
+                      clear ? BlendMode::SRC : cel->layer()->blendMode());
   }
 }
 
@@ -80,6 +80,9 @@ doc::Image* rasterize_with_cel_bounds(const doc::Cel* cel)
   ASSERT(sprite);
 
   doc::ImageSpec spec = sprite->spec();
+  spec.setColorMode(doc::ColorMode(cel->layer()->pixelFormat()));
+  if (cel->layer()->isRgbReference())
+    spec.setMaskColor(0);
   spec.setWidth(cel->bounds().w);
   spec.setHeight(cel->bounds().h);
 
@@ -95,7 +98,11 @@ doc::Image* rasterize_with_sprite_bounds(const doc::Cel* cel)
   const doc::Sprite* sprite = cel->sprite();
   ASSERT(sprite);
 
-  std::unique_ptr<doc::Image> dst(doc::Image::create(sprite->spec()));
+  doc::ImageSpec spec = sprite->spec();
+  spec.setColorMode(doc::ColorMode(cel->layer()->pixelFormat()));
+  if (cel->layer()->isRgbReference())
+    spec.setMaskColor(0);
+  std::unique_ptr<doc::Image> dst(doc::Image::create(spec));
   rasterize_with_sprite_bounds(dst.get(), cel);
   return dst.release();
 }

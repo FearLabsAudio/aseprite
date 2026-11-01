@@ -12,6 +12,8 @@
 #include "app/ui/editor/editor.h"
 
 #include "app/app.h"
+#include "app/util/indexed_conversion.h"
+#include "doc/palette_bank.h"
 #include "app/app_menus.h"
 #include "app/color.h"
 #include "app/color_picker.h"
@@ -2884,17 +2886,6 @@ void Editor::pasteImage(const ImageRef& image,
     mask = temp_mask.get();
   }
 
-  // Change to a selection tool: it's necessary for PixelsMovement
-  // which will use the extra cel for transformation preview, and is
-  // not compatible with the drawing cursor preview which overwrite
-  // the extra cel.
-  if (!getCurrentEditorInk()->isSelection()) {
-    tools::Tool* defaultSelectionTool = App::instance()->toolBox()->getToolById(
-      tools::WellKnownTools::RectangularMarquee);
-
-    ToolBar::instance()->selectTool(defaultSelectionTool);
-  }
-
   Sprite* sprite = this->sprite();
 
   // Check bounds where the image will be pasted.
@@ -2972,7 +2963,7 @@ void Editor::pasteImage(const ImageRef& image,
     dstSize = grid.tilemapSizeToCanvas(dstSize);
 
     // Here we rasterize the tilemap.
-    const doc::PixelFormat dstPixelFormat = sprite->pixelFormat();
+    const doc::PixelFormat dstPixelFormat = m_layer ? m_layer->pixelFormat() : sprite->pixelFormat();
     pastedImage.reset(Image::create(dstPixelFormat, dstSize.w, dstSize.h));
     render::Render().renderCel(pastedImage.get(),
                                // TODO there is no "source cel", we are using the "destination cel"
@@ -2995,6 +2986,37 @@ void Editor::pasteImage(const ImageRef& image,
   }
   else {
     pastedImage = image;
+  }
+
+  if (pastedImage->pixelFormat() == IMAGE_RGB && site.pixelFormat() == IMAGE_INDEXED) {
+    // Error diffusion must see the same source in the preview and final paste,
+    // including the holes in a nonrectangular clipboard selection.
+    if (!mask2.isRectangular()) {
+      pastedImage.reset(Image::createCopy(pastedImage.get()));
+      for (int py = 0; py < pastedImage->height(); ++py)
+        for (int px = 0; px < pastedImage->width(); ++px)
+          if (!mask2.containsPoint(mask2.origin().x + px, mask2.origin().y + py))
+            pastedImage->putPixel(px, py, 0);
+    }
+    IndexedConversionOptions options;
+    const doc::Palette palette(*site.palette());
+    const int transparent = site.layer()->isBackground() ? -1 :
+      (doc::uses_local_palette(site.layer()) ? 0 : sprite->transparentColor());
+    if (!choose_indexed_conversion(this, site.layer(), pastedImage, mask2.origin(), palette,
+                                   transparent, true, options, &mask2))
+      return;
+    pastedImage = convert_to_indexed(pastedImage.get(), palette, transparent, options);
+    if (site.tilemapMode() == TilemapMode::Tiles) {
+      site.tilemapMode(TilemapMode::Pixels);
+      site.tilesetMode(TilesetMode::Auto);
+    }
+  }
+
+  // Change tools only after the conversion is accepted.
+  if (!getCurrentEditorInk()->isSelection()) {
+    tools::Tool* defaultSelectionTool = App::instance()->toolBox()->getToolById(
+      tools::WellKnownTools::RectangularMarquee);
+    ToolBar::instance()->selectTool(defaultSelectionTool);
   }
 
   PixelsMovementPtr pixelsMovement(new PixelsMovement(UIContext::instance(),

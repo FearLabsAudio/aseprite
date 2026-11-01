@@ -145,7 +145,7 @@ public:
           if (loop->getOpacity() == 255 && loop->getDynamics().gradient == DynamicSensor::Static) {
             color_t color = loop->getPrimaryColor();
 
-            switch (loop->sprite()->pixelFormat()) {
+            switch (loop->pixelFormat()) {
               case IMAGE_RGB:       opaque = (rgba_geta(color) == 255); break;
               case IMAGE_GRAYSCALE: opaque = (graya_geta(color) == 255); break;
               case IMAGE_INDEXED:
@@ -480,7 +480,7 @@ public:
             }
             // For transparent layers
             else {
-              if (loop->sprite()->pixelFormat() == IMAGE_INDEXED)
+              if (loop->pixelFormat() == IMAGE_INDEXED)
                 loop->setPrimaryColor(loop->sprite()->transparentColor());
 
               setProc(get_ink_proc<MergeInkProcessing>(loop));

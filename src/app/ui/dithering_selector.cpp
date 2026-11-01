@@ -66,11 +66,12 @@ public:
   render::DitheringAlgorithm algo() const { return m_dithering.algorithm(); }
 
   render::DitheringMatrix matrix() const { return m_dithering.matrix(); }
+  void setPreviewPalette(const doc::Palette* palette) { m_palette = palette; }
 
 private:
   os::Surface* preview()
   {
-    const doc::Palette* palette = get_current_palette();
+    const doc::Palette* palette = m_palette ? m_palette : get_current_palette();
     ASSERT(palette);
 
     if (m_preview) {
@@ -167,11 +168,13 @@ private:
   os::SurfaceRef m_preview;
   doc::ObjectId m_palId;
   int m_palMods;
+  const doc::Palette* m_palette = nullptr;
 };
 
 } // anonymous namespace
 
-DitheringSelector::DitheringSelector(Type type) : m_type(type)
+DitheringSelector::DitheringSelector(Type type, const doc::Palette* previewPalette)
+  : m_type(type), m_previewPalette(previewPalette)
 {
   setId("dithering_selector"); // Used for label buddies.
 
@@ -252,6 +255,8 @@ void DitheringSelector::regenerate(int selectedItemIndex)
       break;
   }
   selectedItemIndex = std::clamp(selectedItemIndex, 0, std::max(0, getItemCount() - 1));
+  for (int i = 0; i < getItemCount(); ++i)
+    static_cast<DitherItem*>(getItem(i))->setPreviewPalette(m_previewPalette);
   setSelectedItemIndex(selectedItemIndex);
   setSizeHint(calcItemSizeHint(selectedItemIndex));
 }

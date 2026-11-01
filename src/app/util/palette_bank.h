@@ -3,22 +3,61 @@
 #define APP_UTIL_PALETTE_BANK_H_INCLUDED
 #pragma once
 #include "app/cmd/set_palette.h"
+#include "app/cmd/set_cel_image.h"
 #include "app/cmd/set_user_data.h"
 #include "app/tx.h"
+#include "app/util/indexed_conversion.h"
 #include "doc/palette_bank.h"
 #include "doc/tileset.h"
 #include "doc/cel.h"
+#include "doc/cel_data.h"
+#include "doc/rgbmap.h"
+#include "doc/octree_map.h"
+#include "render/quantization.h"
+#include "render/dithering.h"
+#include <set>
 
 namespace app {
-inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank)
+inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc::frame_t frame)
+{
+  const auto* palette = layer->sprite()->palette(frame);
+  return (bank >= 0 || doc::force_karn_rules(layer->sprite()) ?
+    doc::make_bank_palette(*palette, palette->size() <= 16 ? 0 : std::max(0, bank)) : *palette);
+}
+
+inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
+                                   const IndexedConversionOptions& options = {})
 {
   if (!layer->isImage() || layer->isReference() || layer->isBackground() ||
       layer->sprite()->pixelFormat() != IMAGE_INDEXED)
     throw std::runtime_error("Palette banks require an indexed image or tilemap layer. Convert backgrounds to layers first.");
-  if (bank < -1 || bank > 15)
-    throw std::runtime_error("Palette bank must be between 0 and 15, or -1 for Document Palette.");
+  if (bank < -2 || bank > 15)
+    throw std::runtime_error("Palette bank must be 0-15, -1 for Document Palette, or -2 for Full color Reference.");
   if (bank == layer->paletteBank())
     return;
+  if (bank == -2 && layer->isTilemap())
+    throw std::runtime_error("Convert this tilemap to a regular layer before assigning Full color Reference.");
+  const bool fromRgb = layer->isRgbReference();
+  // Convert once per linked cel data, retaining animation links and undo history.
+  if (bank == -2 || fromRgb) {
+    std::set<doc::ObjectId> seen;
+    for (auto* cel : layer->cels()) {
+      if (!seen.insert(cel->data()->id()).second)
+        continue;
+      doc::ImageRef image;
+      if (bank == -2) {
+        image.reset(render::convert_pixel_format(cel->image(), nullptr, IMAGE_RGB,
+          render::Dithering(), layer->rgbMap(cel->frame()), layer->palette(cel->frame()),
+          false, 0));
+      }
+      else {
+        const auto palette = palette_for_bank_conversion(layer, bank, cel->frame());
+        const int mask = bank >= 0 ? 0 : layer->sprite()->transparentColor();
+        image = convert_to_indexed(cel->image(), palette, mask, options);
+      }
+      tx(new cmd::SetCelImage(cel, image));
+    }
+  }
   if (bank >= 0) {
     if (layer->sprite()->transparentColor() != 0)
       throw std::runtime_error("Palette banks require transparent index 0 (Sprite Properties).");
@@ -47,10 +86,10 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank)
     }
   }
   auto data = layer->userData();
-  if (bank < 0)
+  if (bank == -1)
     data.properties(doc::kPaletteBankProperties).erase("bank");
   else
-    data.properties(doc::kPaletteBankProperties)["bank"] = uint8_t(bank);
+    data.properties(doc::kPaletteBankProperties)["bank"] = int8_t(bank);
   tx(new cmd::SetUserData(layer, data, static_cast<Doc*>(layer->sprite()->document())));
 }
 } // namespace app

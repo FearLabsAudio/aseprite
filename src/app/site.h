@@ -14,6 +14,7 @@
 #include "doc/cel_list.h"
 #include "doc/frame.h"
 #include "doc/palette_picks.h"
+#include "doc/pixel_format.h"
 #include "doc/selected_objects.h"
 #include "gfx/fwd.h"
 #include "view/range.h"
@@ -63,6 +64,7 @@ public:
   Doc* document() const { return m_document; }
   doc::Sprite* sprite() const { return m_sprite; }
   doc::Layer* layer() const { return m_layer; }
+  doc::PixelFormat pixelFormat() const;
   doc::frame_t frame() const { return m_frame; }
   doc::Cel* cel() const;
   const view::RealRange& range() const { return m_range; }

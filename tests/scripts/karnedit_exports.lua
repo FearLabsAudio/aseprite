@@ -69,13 +69,16 @@ local kept=E.readJson(updated.rows[1].kit)
 assert(kept.Id==ground.Id and kept.SourceFileId==ground.SourceFileId)
 assert(kept.Brushes[1].Id=='brush-one' and kept.Extra=='Keep')
 assert(E.readJson(options.output).Id==collage.Id)
--- Recreating missing mapped owner files must retain remembered resource IDs.
+-- Missing files get fresh IDs, even when previous IDs were remembered.
 assert(os.remove(updated.rows[2].kit)); assert(os.remove(options.output))
 local recovered=E.prepare(s,{mode='collage',frame=1,workspace=root,tilekits=options.tilekits,
   output=options.output,rows=updated.rows,collageId=collage.Id})
-E.write(recovered)
-assert(E.readJson(updated.rows[2].kit).Id==trees.Id)
-assert(E.readJson(options.output).Id==collage.Id)
+E.write(recovered); E.remember(recovered)
+assert(E.readJson(updated.rows[2].kit).Id~=trees.Id)
+assert(E.readJson(options.output).Id~=collage.Id)
+assert(E.readJson(updated.rows[1].kit).Id==ground.Id)
+assert(E.readJson(updated.rows[1].kit).Brushes[1].Id=='brush-one')
+assert(E.readJson(options.output).Collage.Cells[1].TileKitId==recovered.rows[2].kitId)
 -- Persistence and rename do not change export paths.
 s:saveAs(root..'/source.aseprite')
 local loaded=app.open(root..'/source.aseprite')

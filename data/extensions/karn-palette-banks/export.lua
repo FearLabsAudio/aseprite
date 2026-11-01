@@ -73,7 +73,7 @@ function M.layers(s,visibleOnly)
     for _,l in ipairs(layers) do
       local shown=visible and l.isVisible
       if l.isGroup then visit(l.layers,shown)
-      elseif not l.isReference and (not visibleOnly or shown) then out[#out+1]=l end
+      elseif not l.isReference and l.paletteBank>=0 and (not visibleOnly or shown) then out[#out+1]=l end
     end
   end
   visit(s.layers,true)
@@ -140,9 +140,13 @@ function M.prepare(s,options)
   assert(mode=='bmp' or mode=='collage','Unknown export mode.')
   local frame=options.frame or app.frame.frameNumber
   assert(frame>=1 and frame<=#s.frames,'Invalid frame.')
-  local output=M.absolute(options.output)
-  extension(output,mode=='bmp' and 'bmp' or 'json')
-  local rows=options.rows or M.defaults(s,mode,output)
+  local exportCollage=mode=='collage' and options.exportCollage~=false
+  local output
+  if mode=='bmp' or exportCollage then
+    output=M.absolute(options.output)
+    extension(output,mode=='bmp' and 'bmp' or 'json')
+  end
+  local rows=options.rows or M.defaults(s,mode,output or app.fs.joinPath(options.tilekits,'Artwork.json'))
   assert(#rows>0,'There are no layers to export.')
   local width,height=((s.width+7)//8)*8,((s.height+7)//8)*8
   local workspace,root,side
@@ -150,17 +154,20 @@ function M.prepare(s,options)
     workspace,root=M.absolute(options.workspace),M.absolute(options.tilekits)
     assert(app.fs.isFile(app.fs.joinPath(workspace,'src','constants.p8')),
       'Choose the KarnEdit Game Workspace containing src/constants.p8.')
-    M.within(root,workspace); M.within(output,root)
-    for _,n in ipairs{16,32,64} do if n*8>=math.max(width,height) then side=n; break end end
-    assert(side,'Collages support up to 64 x 64 cells (512 x 512 pixels).')
+    M.within(root,workspace)
+    if exportCollage then
+      M.within(output,root)
+      for _,n in ipairs{16,32,64} do if n*8>=math.max(width,height) then side=n; break end end
+      assert(side,'Collages support up to 64 x 64 cells (512 x 512 pixels).')
+    end
   end
   local plan={sprite=s,mode=mode,output=output,workspace=workspace,tilekits=root,frame=frame,
     files={},rows={},warnings={},new=options.new==true,mergeByBank=mode=='bmp' and options.mergeByBank==true,
-    bmpSettings=options.bmpSettings}
+    bmpSettings=options.bmpSettings,exportCollage=exportCollage}
   local shared,sharedKits={},{}
   if options.bmpPlan then
     assert(mode=='collage','Shared BMP sources are only used by collage export.')
-    M.validateCollageBmps(s,frame,options.bmpPlan)
+    M.validateCollageBmps(s,frame,options.bmpPlan,exportCollage)
     assert(M.isCurrent(options.bmpPlan),'BMP exports are out of date. Open BMP exports to update them.')
     plan.inputs={}
     for _,r in ipairs(options.bmpPlan.rows) do shared[r.layer.id]=r end
@@ -176,7 +183,7 @@ function M.prepare(s,options)
     assert(not plan.new or not old,'Export As New requires unused filenames: '..path)
     plan.files[#plan.files+1]={path=path,content=content,original=old}
   end
-  local cells,merged,collageBanks={},{},{}
+  local cells,merged={},{}
   -- Sort mappings by actual layer order, never by filename or dialog row order.
   local order={}; for i,l in ipairs(M.layers(s,false)) do order[l.id]=i end
   local sorted={}; for _,r in ipairs(rows) do if r.selected~=false then sorted[#sorted+1]=r end end
@@ -187,10 +194,9 @@ function M.prepare(s,options)
     assert(l and l.sprite==s and not l.isGroup and not l.isReference,'Invalid source layer.')
     assert(not seenLayers[l.id],'A layer appears more than once in the export mapping.')
     seenLayers[l.id]=true
-    if mode~='collage' or visible[l.id] then
-      assert(l.paletteBank>=0,'Assign a palette bank to layer "'..l.name..'" first.')
+    if l.paletteBank>=0 and (mode~='collage' or options.bmpPlan or visible[l.id]) then
       local cel=l:cel(frame)
-      if mode=='collage' or plan.mergeByBank then
+      if (exportCollage and visible[l.id]) or plan.mergeByBank then
         assert(not cel or cel.zIndex==0,'Reset cel Z-index on "'..l.name..'"; export uses layer order.')
         local p=l
         while p and p~=s do
@@ -213,28 +219,6 @@ function M.prepare(s,options)
           compositePixels(merged[bank].image,localImage)
         end
       end
-      if mode=='collage' and not options.bmpPlan then
-        -- Keep each layer's TileKit identity and original occupied cells.
-        -- Bake lower same-bank pixels into those cells so KarnEdit still
-        -- resolves every collage cell from one source tile and one palette.
-        local bank=l.paletteBank
-        local accumulated=collageBanks[bank]
-        if accumulated then
-          compositePixels(accumulated,localImage)
-          local baked=Image(localImage)
-          for cell in pairs(occupied) do
-            local left,top=(cell%(width//8))*8,(cell//(width//8))*8
-            for y=top,math.min(top+7,baked.height-1) do
-              for x=left,math.min(left+7,baked.width-1) do
-                baked:putPixel(x,y,accumulated:getPixel(x,y))
-              end
-            end
-          end
-          bytes=bmp(baked,palette(s,frame),bank,width,height)
-        else
-          collageBanks[bank]=Image(localImage)
-        end
-      end
       extension(bmpPath,'bmp')
       if not plan.mergeByBank and not options.bmpPlan then add(bmpPath,bytes) end
       if reserved then plan.warnings[#plan.warnings+1]=l.name..': indices 1/2 preserved; KarnEdit imports them as transparent.' end
@@ -253,7 +237,7 @@ function M.prepare(s,options)
           assert(kit.Kind==0 and kit.TileW==8 and kit.TileH==8 and type(kit.Id)=='string',
             'Choose an 8x8 bitmap TileKit: '..kitPath)
           assert(not row.kitId or row.kitId==kit.Id,'Mapped TileKit identity changed: '..kitPath)
-        else kit={Id=(not plan.new and row.kitId) or uid(),Kind=0,TileW=8,TileH=8,Brushes={}} end
+        else kit={Id=uid(),Kind=0,TileW=8,TileH=8,Brushes={}} end
         assert(previous or not ids[kit.Id],'Each BMP needs its own TileKit: '..kitPath); ids[kit.Id]=true
         if not kit.SourceFileId or kit.SourceFileId=='' or
            (kit.ImagePath or ''):gsub('\\','/'):lower()~=relative:lower() then
@@ -273,28 +257,30 @@ function M.prepare(s,options)
           end
         end
         mapped.kit,mapped.kitId=kitPath,kit.Id
-        for cell in pairs(occupied) do
-          local x,y=cell%(width//8),cell//(width//8)
-          cells[y*side+x]={X=x,Y=y,TileKitId=kit.Id,SourceTileX=x,SourceTileY=y,
-            PaletteTileKitId='',PaletteOffset=0,HFlip=false,VFlip=false}
+        if exportCollage and visible[l.id] then
+          for cell in pairs(occupied) do
+            local x,y=cell%(width//8),cell//(width//8)
+            cells[y*side+x]={X=x,Y=y,TileKitId=kit.Id,SourceTileX=x,SourceTileY=y,
+              PaletteTileKitId='',PaletteOffset=0,HFlip=false,VFlip=false}
+          end
         end
       end
       plan.rows[#plan.rows+1]=mapped
     end
   end
-  assert(#plan.rows>0,'There are no visible layers to export.')
+  assert(#plan.rows>0,'There are no palette-bank layers to export.')
   if plan.mergeByBank then
     for bank=0,15 do
       local group=merged[bank]
       if group then add(group.path,(bmp(group.image,palette(s,frame),bank,width,height))) end
     end
   end
-  if mode=='collage' then
+  if exportCollage then
     local collage=M.readJson(output)
     if collage then
       assert(collage.Kind==1 and type(collage.Id)=='string','Destination is not a KarnEdit collage.')
       assert(not options.collageId or options.collageId==collage.Id,'Destination collage identity changed.')
-    else collage={Id=(not plan.new and options.collageId) or uid(),Kind=1,SourceFileId='',ImagePath='',TileW=8,TileH=8,Brushes={}} end
+    else collage={Id=uid(),Kind=1,SourceFileId='',ImagePath='',TileW=8,TileH=8,Brushes={}} end
     assert(not ids[collage.Id],'Collage and source TileKit share an ID.')
     local ordered={}; for i=0,side*side-1 do if cells[i] then ordered[#ordered+1]=cells[i] end end
     collage.Collage={Width=side,Height=side,Cells=ordered}
@@ -346,12 +332,21 @@ function M.write(plan)
   end
   for _,f in ipairs(staged) do if f.saved then os.remove(f.backup) end end
 end
+local function decode(value)
+  if type(value)=='string' then
+    local ok,t=pcall(json.decode,value)
+    if ok and (type(t)=='table' or type(t)=='userdata') then return t end
+  end
+  return {}
+end
 function M.remember(plan)
   -- Native layer UUIDs are otherwise session-only in ordinary documents.
   plan.sprite.useLayerUuids=true
   app.transaction('Remember KARN export',function()
+    local previous=decode(plan.sprite.properties(GROUP)[plan.mode])
     plan.sprite.properties(GROUP)[plan.mode]=json.encode{
-      output=plan.output,workspace=plan.workspace,tilekits=plan.tilekits,collageId=plan.collageId,
+      output=plan.output or previous.output,workspace=plan.workspace,tilekits=plan.tilekits,
+      collageId=plan.collageId or previous.collageId,
       bmpSettings=plan.bmpSettings,mergeByBank=plan.mergeByBank}
     for _,r in ipairs(plan.rows) do
       if not plan.mergeByBank then
@@ -359,13 +354,6 @@ function M.remember(plan)
       end
     end
   end)
-end
-local function decode(value)
-  if type(value)=='string' then
-    local ok,t=pcall(json.decode,value)
-    if ok and (type(t)=='table' or type(t)=='userdata') then return t end
-  end
-  return {}
 end
 function M.bmpFromSettings(s,frame,settings,new)
   assert(settings and settings.folder,'Set up the BMP exports first.')
@@ -390,24 +378,22 @@ function M.bmpFromSettings(s,frame,settings,new)
   return M.prepare(s,{mode='bmp',frame=frame,output=app.fs.joinPath(folder,M.safeName(settings.baseName or 'Artwork')..'.bmp'),
     rows=rows,mergeByBank=settings.mergeByBank,bankOutputs=bankOutputs,bmpSettings=settings,new=new})
 end
-function M.collageNeedsMerge(s)
+function M.canExportCollage(s)
   local banks={}
   for _,l in ipairs(M.layers(s,true)) do
-    if banks[l.paletteBank] then return true end
     banks[l.paletteBank]=true
   end
-  return false
+  local count=0; for _ in pairs(banks) do count=count+1 end
+  return count>1
 end
-function M.validateCollageBmps(s,frame,plan)
+function M.validateCollageBmps(s,frame,plan,exportCollage)
   assert(plan.mode=='bmp' and plan.sprite==s and plan.frame==frame,'Export BMPs for the current document and frame.')
   local visible,required,banks={},{},{}
   for _,l in ipairs(M.layers(s,true)) do visible[l.id]=true; required[l.id]=true; banks[l.paletteBank]=true end
   assert(next(required),'There are no visible layers to export.')
-  assert(plan.mergeByBank or not M.collageNeedsMerge(s),
-    'Collage sources need merged BMPs for layers sharing a palette bank.')
   for _,r in ipairs(plan.rows) do
     required[r.layer.id]=nil
-    assert(not plan.mergeByBank or visible[r.layer.id] or not banks[r.layer.paletteBank],
+    assert(exportCollage==false or not plan.mergeByBank or visible[r.layer.id] or not banks[r.layer.paletteBank],
       'A hidden layer shares a collage bank. Export only visible layers for this collage.')
   end
   assert(not next(required),'Export all visible layers before creating the collage.')
@@ -422,7 +408,7 @@ function M.collageBmps(s,frame)
   local ok,plan=pcall(function()
     local saved=decode(s.properties(GROUP).bmp)
     local p=M.bmpFromSettings(s,frame,saved.bmpSettings)
-    M.validateCollageBmps(s,frame,p)
+    M.validateCollageBmps(s,frame,p,false)
     return p
   end)
   if not ok then return nil,tostring(plan) end
@@ -430,10 +416,9 @@ function M.collageBmps(s,frame)
   return plan
 end
 function M.collageGroups(s,bmpPlan,tilekits,new)
-  local visible,groups,byPath,used={},{},{},{}
-  for _,l in ipairs(M.layers(s,true)) do visible[l.id]=true end
+  local groups,byPath,used={},{},{}
   for _,r in ipairs(bmpPlan.rows) do
-    if visible[r.layer.id] then
+    if r.layer.paletteBank>=0 then
       local key=M.absolute(r.bmp):lower()
       local group=byPath[key]
       if not group then

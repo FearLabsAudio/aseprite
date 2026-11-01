@@ -169,7 +169,7 @@ public:
                              int(ti * rgba_geta(a) + t * rgba_geta(b)));
         };
 
-        switch (loop->sprite()->pixelFormat()) {
+        switch (loop->pixelFormat()) {
           case IMAGE_RGB: a = rgbaGradient(a, b); break;
           case IMAGE_GRAYSCALE:
             if (graya_geta(a) == 0)
@@ -217,7 +217,7 @@ public:
         if (m_hasDynamicGradient && !ink->isEraser() &&
             (m_dynamics.ditheringMatrix.rows() > 1 || m_dynamics.ditheringMatrix.cols() > 1)) {
           convert_bitmap_brush_to_dithering_brush(newBrush.get(),
-                                                  loop->sprite()->pixelFormat(),
+                                                  loop->pixelFormat(),
                                                   m_dynamics.ditheringMatrix,
                                                   pt.gradient,
                                                   m_secondaryColor,

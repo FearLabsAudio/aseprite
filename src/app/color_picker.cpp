@@ -18,6 +18,7 @@
 #include "doc/cel.h"
 #include "doc/image.h"
 #include "doc/layer_tilemap.h"
+#include "doc/palette_bank.h"
 #include "doc/primitives.h"
 #include "doc/render_plan.h"
 #include "doc/sprite.h"
@@ -134,7 +135,7 @@ void ColorPicker::pickColor(const Site& site,
       else if (site.tilemapMode() == TilemapMode::Pixels) {
         // Preserve the exact local slot when sampling a banked active layer.
         // Sampling another layer's bank must not feed its global index to paint.
-        if (site.layer() && site.layer()->paletteBank() >= 0) {
+        if (doc::uses_local_palette(site.layer())) {
           color_t local;
           if (site.cel() && get_cel_pixel(site.cel(), pos.x, pos.y, site.frame(), local)) {
             m_color = app::Color::fromIndex(local);
@@ -143,14 +144,15 @@ void ColorPicker::pickColor(const Site& site,
           break;
         }
         m_color = app::Color::fromImage(
-          sprite->pixelFormat(),
+          site.pixelFormat(),
           render::get_sprite_pixel(sprite,
                                    pos.x,
                                    pos.y,
                                    site.frame(),
                                    proj,
                                    pref.experimental.newBlend(),
-                                   pref.experimental.composeGroups()));
+                                   pref.experimental.composeGroups(),
+                                   site.pixelFormat()));
       }
       break;
     }

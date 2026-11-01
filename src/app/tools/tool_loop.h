@@ -19,6 +19,8 @@
 #include "doc/color.h"
 #include "doc/frame.h"
 #include "doc/grid.h"
+#include "doc/layer.h"
+#include "doc/sprite.h"
 #include "filters/tiled_mode.h"
 #include "gfx/point.h"
 #include "gfx/rect.h"
@@ -93,6 +95,10 @@ public:
 
   // Returns the layer that will be modified if the tool paints
   virtual Layer* getLayer() = 0;
+  PixelFormat pixelFormat()
+  {
+    return getLayer() ? getLayer()->pixelFormat() : sprite()->pixelFormat();
+  }
 
   virtual const Cel* getCel() = 0;
 

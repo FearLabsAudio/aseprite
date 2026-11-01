@@ -28,16 +28,16 @@ void ExtraCel::create(Purpose purpose,
                       const gfx::Rect& bounds,
                       const gfx::Size& imageSize,
                       const doc::frame_t frame,
-                      const int opacity)
+                      const int opacity,
+                      doc::PixelFormat pixelFormat)
 {
   ASSERT(sprite);
 
   m_purpose = purpose;
 
-  doc::PixelFormat pixelFormat;
   if (tilemapMode == TilemapMode::Tiles)
     pixelFormat = doc::IMAGE_TILEMAP;
-  else
+  else if (pixelFormat == doc::IMAGE_BITMAP)
     pixelFormat = sprite->pixelFormat();
 
   if (!m_image || m_image->pixelFormat() != pixelFormat || m_image->width() != imageSize.w ||

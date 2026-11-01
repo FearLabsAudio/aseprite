@@ -44,12 +44,12 @@ doc::Image* new_image_from_mask(const Site& site,
   ASSERT(srcMaskBitmap);
   ASSERT(!srcBounds.isEmpty());
 
-  std::unique_ptr<Image> dst(Image::create(srcSprite->pixelFormat(), srcBounds.w, srcBounds.h));
+  std::unique_ptr<Image> dst(Image::create(site.pixelFormat(), srcBounds.w, srcBounds.h));
   if (!dst)
     return nullptr;
 
   // Clear the new image
-  dst->setMaskColor(srcSprite->transparentColor());
+  dst->setMaskColor(dst->pixelFormat() == IMAGE_RGB ? 0 : srcSprite->transparentColor());
   clear_image(dst.get(), dst->maskColor());
 
   const Image* src = nullptr;
@@ -102,12 +102,12 @@ doc::Image* new_image_from_mask(const Layer& layer,
   ASSERT(srcMaskBitmap);
   ASSERT(!srcBounds.isEmpty());
 
-  std::unique_ptr<Image> dst(Image::create(srcSprite->pixelFormat(), srcBounds.w, srcBounds.h));
+  std::unique_ptr<Image> dst(Image::create(layer.pixelFormat(), srcBounds.w, srcBounds.h));
   if (!dst)
     return nullptr;
 
   // Clear the new image
-  dst->setMaskColor(srcSprite->transparentColor());
+  dst->setMaskColor(dst->pixelFormat() == IMAGE_RGB ? 0 : srcSprite->transparentColor());
   clear_image(dst.get(), dst->maskColor());
 
   const Image* src = nullptr;

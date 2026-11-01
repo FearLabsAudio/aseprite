@@ -99,7 +99,7 @@ bool ConvertLayerCommand::onEnabled(Context* ctx)
   switch (params().to()) {
     case ConvertLayerParam::Background:
       return
-        ctx->activeSite().layer()->paletteBank() < 0 &&
+        ctx->activeSite().layer()->paletteBank() == -1 &&
         // Doesn't have a background layer
         !ctx->checkFlags(ContextFlags::HasBackgroundLayer) &&
         // Convert a regular layer or tilemap into background
@@ -115,7 +115,8 @@ bool ConvertLayerCommand::onEnabled(Context* ctx)
         ctx->checkFlags(ContextFlags::ActiveLayerIsTilemap);
 
     case ConvertLayerParam::Tilemap:
-      return ctx->checkFlags(ContextFlags::ActiveLayerIsImage) &&
+      return !ctx->activeSite().layer()->isRgbReference() &&
+             ctx->checkFlags(ContextFlags::ActiveLayerIsImage) &&
              !ctx->checkFlags(ContextFlags::ActiveLayerIsTilemap) &&
              // TODO add support for background tliemaps
              !ctx->checkFlags(ContextFlags::ActiveLayerIsBackground);
@@ -140,6 +141,10 @@ void ConvertLayerCommand::onExecute(Context* ctx)
   tile_flags matchFlags = 0;
   Grid grid0 = site.grid();
   grid0.origin(gfx::Point(0, 0));
+  if (doc::force_karn_rules(sprite)) {
+    grid0 = Grid(gfx::Size(8, 8));
+    matchFlags = doc::kKarnMatchFlags;
+  }
 
   if (params().to() == ConvertLayerParam::Tilemap && ctx->isUIAvailable() && params().ui() &&
       // Background or Transparent Layer -> Tilemap

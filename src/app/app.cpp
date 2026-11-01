@@ -870,10 +870,7 @@ PixelFormat app_get_current_pixel_format()
   Context* ctx = App::instance()->context();
   ASSERT(ctx);
 
-  Doc* doc = ctx->activeDocument();
-  if (doc)
-    return doc->sprite()->pixelFormat();
-  return IMAGE_RGB;
+  return ctx->activeSite().pixelFormat();
 }
 
 int app_get_color_to_clear_layer(Layer* layer)

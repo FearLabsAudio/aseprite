@@ -59,7 +59,8 @@ private:
   doc::Cel* readCelChunk(doc::frame_t frame,
                          doc::PixelFormat pixelFormat,
                          const AsepriteHeader* header,
-                         const size_t chunk_end);
+                         const size_t chunk_end,
+                         bool rgbPayload = false);
   void readCelExtraChunk(doc::Cel* cel);
   void readColorProfile(doc::Sprite* sprite);
   void readExternalFiles(AsepriteExternalFiles& extFiles);

@@ -29,8 +29,8 @@ public:
 
   ColorTarget(doc::Layer* layer)
     : m_layerType(layer->isBackground() ? BackgroundLayer : TransparentLayer)
-    , m_pixelFormat(layer->sprite()->pixelFormat())
-    , m_maskColor(layer->sprite()->transparentColor())
+    , m_pixelFormat(layer->pixelFormat())
+    , m_maskColor(layer->isRgbReference() ? 0 : layer->sprite()->transparentColor())
   {
   }
 

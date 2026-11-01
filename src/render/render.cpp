@@ -1364,7 +1364,7 @@ void Render::renderImage(Image* dst_image,
     return;
 
   // Get the function to composite the tile with the given flip flags
-  if (tileFlags) {
+  if (tileFlags || (m_sprite && cel_image->pixelFormat() != m_sprite->pixelFormat())) {
     compositeImage =
       getImageComposition(dst_image->pixelFormat(), cel_image->pixelFormat(), nullptr, tileFlags);
   }

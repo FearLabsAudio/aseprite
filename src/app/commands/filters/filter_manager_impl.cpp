@@ -97,7 +97,7 @@ void FilterManagerImpl::setProgressDelegate(IProgressDelegate* progressDelegate)
 
 PixelFormat FilterManagerImpl::pixelFormat() const
 {
-  return m_site.sprite()->pixelFormat();
+  return m_cel ? m_cel->layer()->pixelFormat() : m_site.pixelFormat();
 }
 
 void FilterManagerImpl::setTarget(int target)
@@ -189,7 +189,7 @@ bool FilterManagerImpl::applyStep()
     applyToPaletteIfNeeded();
   }
 
-  switch (m_site.sprite()->pixelFormat()) {
+  switch (pixelFormat()) {
     case IMAGE_RGB:       m_filter->applyToRgba(this); break;
     case IMAGE_GRAYSCALE: m_filter->applyToGrayscale(this); break;
     case IMAGE_INDEXED:   m_filter->applyToIndexed(this); break;
@@ -437,7 +437,7 @@ Palette* FilterManagerImpl::getNewPalette()
 {
   if (!m_oldPalette)
     m_oldPalette.reset(new Palette(*getPalette()));
-  if (m_site.layer() && m_site.layer()->paletteBank() >= 0) {
+  if (doc::uses_local_palette(m_site.layer())) {
     if (!m_bankNewPalette)
       m_bankNewPalette.reset(new Palette(*m_oldPalette));
     return m_bankNewPalette.get();

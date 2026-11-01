@@ -178,6 +178,16 @@ bool AsepriteDecoder::decode()
             break;
           }
 
+          case ASE_FILE_CHUNK_KARN_RGB_CEL: {
+            if (chunk_end - tell() < 4 || read32() != 0x31424752)
+              break;
+            if (Cel* cel = readCelChunk(frame, IMAGE_RGB, &header, chunk_end, true)) {
+              last_cel = cel;
+              last_object_with_user_data = cel->data();
+            }
+            break;
+          }
+
           case ASE_FILE_CHUNK_CEL_EXTRA: {
             if (last_cel)
               readCelExtraChunk(last_cel);
@@ -304,6 +314,26 @@ bool AsepriteDecoder::decode()
       break;
   }
 
+  // A file resaved by a stock build can retain the bank assignment but lose
+  // our private chunks. Promote its indexed fallback before allowing editing.
+  for (auto* layer : sprite->allLayers()) {
+    if (!layer->isRgbReference())
+      continue;
+    for (auto* cel : layer->cels()) {
+      const auto* source = cel->image();
+      if (!source || source->pixelFormat() != IMAGE_INDEXED)
+        continue;
+      const auto* palette = sprite->palette(cel->frame());
+      ImageRef rgb(Image::create(IMAGE_RGB, source->width(), source->height()));
+      for (int y = 0; y < source->height(); ++y)
+        for (int x = 0; x < source->width(); ++x) {
+          const int i = source->getPixel(x, y);
+          rgb->putPixel(x, y, i == sprite->transparentColor() ? 0 :
+            i < palette->size() ? palette->getEntry(i) : 0);
+        }
+      cel->data()->setImage(rgb, layer);
+    }
+  }
   delegate()->onSprite(sprite.release());
   return true;
 }
@@ -820,7 +850,8 @@ void read_compressed_image(FileInterface* f,
 Cel* AsepriteDecoder::readCelChunk(frame_t frame,
                                    PixelFormat pixelFormat,
                                    const AsepriteHeader* header,
-                                   const size_t chunk_end)
+                                   const size_t chunk_end,
+                                   bool rgbPayload)
 {
   // Read chunk data
   const layer_t layer_index = read16();
@@ -852,6 +883,10 @@ Cel* AsepriteDecoder::readCelChunk(frame_t frame,
   }
 
   // Create the new frame.
+  if (rgbPayload && (!layer->isRgbReference() || layer->isTilemap() ||
+      (cel_type != ASE_FILE_RAW_CEL && cel_type != ASE_FILE_COMPRESSED_CEL &&
+       cel_type != ASE_FILE_LINK_CEL)))
+    return nullptr;
   std::unique_ptr<Cel> cel;
 
   switch (cel_type) {
@@ -999,6 +1034,14 @@ Cel* AsepriteDecoder::readCelChunk(frame_t frame,
   if (!cel)
     return nullptr;
 
+  if (rgbPayload) {
+    if (!layer->isRgbReference())
+      return nullptr;
+    if (auto* fallback = layer->cel(frame)) {
+      layer->removeCel(fallback);
+      delete fallback;
+    }
+  }
   static_cast<LayerImage*>(layer)->addCel(cel.get());
   return cel.release();
 }

@@ -82,8 +82,10 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
 {
   if (sprite->pixelFormat() == newFormat)
     return;
+  if (doc::force_karn_rules(sprite) && newFormat != IMAGE_INDEXED)
+    throw std::runtime_error("Disable Force KARN rules before changing color mode.");
   for (const auto* layer : sprite->allLayers())
-    if (layer->paletteBank() >= 0)
+    if (layer->paletteBank() >= 0 || layer->isRgbReference())
       throw std::runtime_error("Export a composed image before changing color mode, or remove palette bank assignments first.");
 
   // Calculate the number of images to convert just to show a proper

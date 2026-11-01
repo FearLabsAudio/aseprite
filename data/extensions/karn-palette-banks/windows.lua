@@ -24,7 +24,7 @@ function UI.register(plugin,E,GROUP,BANKS)
       for _,l in ipairs(items) do layers[#layers+1]=l; if l.isGroup then visit(l.layers) end end
     end
     visit(s.layers)
-    local options={'Document Palette'}
+    local options={'Full color Reference','Document Palette'}
     for n=0,15 do options[#options+1]=bankTitle(s,n) end
     local dlg=Dialog{title='Palette Banks',autofit=0}
     local refreshing=false
@@ -39,10 +39,10 @@ function UI.register(plugin,E,GROUP,BANKS)
     end
     local function refreshBanks()
       refreshing=true
-      options={'Document Palette'}
+      options={'Full color Reference','Document Palette'}
       for n=0,15 do options[#options+1]=bankTitle(s,n) end
       for i,l in ipairs(layers) do
-        dlg:modify{id='bank'..i,options=options,option=options[l.paletteBank+2]}
+        dlg:modify{id='bank'..i,options=options,option=options[l.paletteBank+3]}
       end
       for n=0,15 do dlg:modify{id='colors'..n,colors=colorsForBank(n)} end
       refreshing=false
@@ -57,15 +57,17 @@ function UI.register(plugin,E,GROUP,BANKS)
           if name~=l.name then l.name=name; app.refresh() end
         end)
       end}
-      dlg:samerow():combobox{id='bank'..i,options=options,option=options[l.paletteBank+2],
+      dlg:samerow():combobox{id='bank'..i,options=options,option=options[l.paletteBank+3],
         enabled=not l.isBackground and not l.isGroup and not l.isReference,
-        onchange=function()
+        onconfirm=function()
           if refreshing then return end
           attempt(function()
             local selected=dlg.data['bank'..i]
             for j,label in ipairs(options) do
               if selected==label then
-                if l.paletteBank~=j-2 then l.paletteBank=j-2 end
+                if l.paletteBank~=j-3 then
+                  l:convertPaletteBank(j-3)
+                end
                 break
               end
             end
@@ -94,11 +96,15 @@ function UI.register(plugin,E,GROUP,BANKS)
   end
 
   plugin:newMenuGroup{id='karn_exports',title='KARN',group='file_export'}
+  plugin:newCommand{id='KarnForceRules',title='Force KARN rules',group='karn_exports',
+    onenabled=function() return app.sprite~=nil end,
+    onchecked=function() return app.sprite and app.sprite.properties('karn.rules.v1').enabled==true end,
+    onclick=function() app.command.ForceKarnRules() end}
   local bmpWindow=dofile(app.fs.joinPath(directory,'bmp_window.lua'))
   local collageWindow=dofile(app.fs.joinPath(directory,'collage_window.lua'))
   plugin:newCommand{id='KarnExportBmps',title='Export layers as 4bpp BMPs',group='karn_exports',
     onclick=function() attempt(function() bmpWindow.show(plugin,E,GROUP,BANKS) end) end}
-  plugin:newCommand{id='KarnExportCollage',title='Export to KarnEdit collage',group='karn_exports',
+  plugin:newCommand{id='KarnExportCollage',title='Export to Karnedit',group='karn_exports',
     onclick=function() attempt(function() collageWindow.show(plugin,E,GROUP,BANKS,bmpWindow) end) end}
   plugin:newCommand{id='KarnPaletteBanks',title='Palette Banks',
     onclick=function() attempt(banksWindow) end}

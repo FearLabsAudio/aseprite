@@ -40,6 +40,7 @@
 #include "doc/algorithm/shrink_bounds.h"
 #include "doc/blend_image.h"
 #include "doc/doc.h"
+#include "doc/palette_bank.h"
 #include "render/dithering.h"
 #include "render/ordered_dither.h"
 #include "render/quantization.h"
@@ -496,7 +497,7 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
       ASSERT(m_data->image);
 
       Palette* dst_palette = site.palette();
-      bool localIndices = (site.layer() && site.layer()->paletteBank() >= 0 &&
+      bool localIndices = (doc::uses_local_palette(site.layer()) &&
                            m_data->image->pixelFormat() == IMAGE_INDEXED &&
                            m_data->palette && m_data->palette->size() == 16);
       if (localIndices) {
@@ -508,8 +509,11 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
 
       // Source image (clipboard or a converted copy to the destination 'imgtype')
       ImageRef src_image;
-      if ( // Copy image of the same pixel format
-        (m_data->image->pixelFormat() == dstSpr->pixelFormat() &&
+      if ( // Defer interactive RGB quantization until placement/preview in the editor.
+        (interactive && editor && m_data->image->pixelFormat() == IMAGE_RGB &&
+         site.pixelFormat() == IMAGE_INDEXED) ||
+        // Copy image of the same pixel format
+        (m_data->image->pixelFormat() == site.pixelFormat() &&
          // Indexed images can be copied directly only if both images
          // have the same palette.
          (m_data->image->pixelFormat() != IMAGE_INDEXED ||
@@ -521,7 +525,7 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
 
         src_image.reset(render::convert_pixel_format(m_data->image.get(),
                                                      NULL,
-                                                     dstSpr->pixelFormat(),
+                                                     site.pixelFormat(),
                                                      render::Dithering(),
                                                      dst_rgbmap,
                                                      m_data->palette.get(),
@@ -549,7 +553,7 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
         Layer* dstLayer = site.layer();
         ASSERT(dstLayer);
         if (!dstLayer || !dstLayer->isImage() ||
-            (src_image->pixelFormat() != dstSpr->pixelFormat()))
+            (src_image->pixelFormat() != site.pixelFormat()))
           return;
 
         ImageRef result;
@@ -565,7 +569,7 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
           resultBounds = cel->bounds().createUnion(resultBounds);
           // Create a new image (result) as a blend of the active cel image +
           // the source image (clipboard image).
-          result.reset(Image::create(dstSpr->pixelFormat(), resultBounds.w, resultBounds.h));
+          result.reset(Image::create(site.pixelFormat(), resultBounds.w, resultBounds.h));
           doc::blend_image(
             result.get(),
             cel->image(),

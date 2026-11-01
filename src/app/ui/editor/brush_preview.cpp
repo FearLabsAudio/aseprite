@@ -253,9 +253,9 @@ void BrushPreview::show(const gfx::Point& screenPos)
               (ink->isEffect()) ||
               // or when the brush color is transparent and we are not in the background layer
               (!ink->isShading() && (layer && layer->isTransparent()) &&
-               ((sprite->pixelFormat() == IMAGE_INDEXED && brush_color == mask_index) ||
-                (sprite->pixelFormat() == IMAGE_RGB && rgba_geta(brush_color) == 0) ||
-                (sprite->pixelFormat() == IMAGE_GRAYSCALE && graya_geta(brush_color) == 0))))) ||
+               ((site.pixelFormat() == IMAGE_INDEXED && brush_color == mask_index) ||
+                (site.pixelFormat() == IMAGE_RGB && rgba_geta(brush_color) == 0) ||
+                (site.pixelFormat() == IMAGE_GRAYSCALE && graya_geta(brush_color) == 0))))) ||
            // Painting with tile 0 or Eraser tool in Tiles mode should show tile boundaries
            ((tilemapMode == TilemapMode::Tiles) &&
             ((ink->isPaint() && Preferences::instance().colorBar.fgTile() == 0) ||
@@ -396,7 +396,8 @@ void BrushPreview::show(const gfx::Point& screenPos)
                        extraCelBoundsInCanvas,
                        extraCelBounds.size(),
                        site.frame(),
-                       opacity);
+                       opacity,
+                       site.pixelFormat());
     m_extraCel->setType(render::ExtraType::NONE);
     m_extraCel->setBlendMode(
       (layer ? static_cast<LayerImage*>(layer)->blendMode() : BlendMode::NORMAL));

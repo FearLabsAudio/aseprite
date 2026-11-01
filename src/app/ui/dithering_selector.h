@@ -14,6 +14,8 @@
 #include "ui/box.h"
 #include "ui/combobox.h"
 
+namespace doc { class Palette; }
+
 namespace app {
 
 class DitheringSelector : public ui::ComboBox {
@@ -23,7 +25,7 @@ public:
     SelectMatrix,
   };
 
-  DitheringSelector(Type type);
+  DitheringSelector(Type type, const doc::Palette* previewPalette = nullptr);
 
   render::DitheringAlgorithm ditheringAlgorithm();
   render::DitheringMatrix ditheringMatrix();
@@ -37,6 +39,7 @@ private:
   gfx::Size calcItemSizeHint(int index);
 
   Type m_type;
+  const doc::Palette* m_previewPalette;
   obs::scoped_connection m_extChanges;
 };
 

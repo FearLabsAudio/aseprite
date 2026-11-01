@@ -449,8 +449,8 @@ Image* ExpandCelCanvas::getSourceCanvas()
       m_srcImage->setMaskColor(doc::notile);
     }
     else {
-      m_srcImage.reset(Image::create(m_sprite->pixelFormat(), m_bounds.w, m_bounds.h, src_buffer));
-      m_srcImage->setMaskColor(m_sprite->transparentColor());
+      m_srcImage.reset(Image::create((m_layer ? m_layer->pixelFormat() : m_sprite->pixelFormat()), m_bounds.w, m_bounds.h, src_buffer));
+      m_srcImage->setMaskColor(m_layer && m_layer->isRgbReference() ? 0 : m_sprite->transparentColor());
     }
     m_srcImage->clear(m_srcImage->maskColor());
   }
@@ -465,8 +465,8 @@ Image* ExpandCelCanvas::getDestCanvas()
       m_dstImage->setMaskColor(doc::notile);
     }
     else {
-      m_dstImage.reset(Image::create(m_sprite->pixelFormat(), m_bounds.w, m_bounds.h, dst_buffer));
-      m_dstImage->setMaskColor(m_sprite->transparentColor());
+      m_dstImage.reset(Image::create((m_layer ? m_layer->pixelFormat() : m_sprite->pixelFormat()), m_bounds.w, m_bounds.h, dst_buffer));
+      m_dstImage->setMaskColor(m_layer && m_layer->isRgbReference() ? 0 : m_sprite->transparentColor());
     }
     m_dstImage->clear(m_dstImage->maskColor());
   }

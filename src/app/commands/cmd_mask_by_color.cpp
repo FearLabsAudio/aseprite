@@ -69,7 +69,7 @@ public:
     auto box4 = new Box(HORIZONTAL | HOMOGENEOUS);
     auto label_color = new Label(Strings::mask_by_color_label_color());
     m_buttonColor =
-      new ColorButton(params.color(), reader.sprite()->pixelFormat(), ColorButtonOptions());
+      new ColorButton(params.color(), reader.site().pixelFormat(), ColorButtonOptions());
     auto label_tolerance = new Label(Strings::mask_by_color_tolerance());
     m_sliderTolerance = new Slider(0, 255, params.tolerance());
 
@@ -269,7 +269,7 @@ void MaskByColorCommand::onExecute(Context* context)
   Doc* document(writer.document());
 
   if (apply) {
-    int color = color_utils::color_for_image(params.color(), sprite->pixelFormat());
+    int color = color_utils::color_for_image(params.color(), reader.site().pixelFormat());
 
     Tx tx(writer, "Mask by Color", DoesntModifyDocument);
     std::unique_ptr<Mask> mask(generateMask(*document->mask(),
@@ -297,7 +297,7 @@ void MaskByColorWindow::maskPreview()
     int xpos, ypos;
     const Image* image = m_reader->image(&xpos, &ypos);
     int color = color_utils::color_for_image(m_buttonColor->getColor(),
-                                             m_reader->sprite()->pixelFormat());
+                                             m_reader->site().pixelFormat());
     int tolerance = m_sliderTolerance->getValue();
     std::unique_ptr<Mask> mask(generateMask(*m_reader->document()->mask(),
                                             m_isOrigMaskVisible,

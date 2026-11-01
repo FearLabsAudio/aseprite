@@ -25,6 +25,9 @@
 #define ASE_FILE_CHUNK_FLI_COLOR         11
 #define ASE_FILE_CHUNK_LAYER             0x2004
 #define ASE_FILE_CHUNK_CEL               0x2005
+// KARN extension: RGB1 signature followed by a standard cel payload in RGBA.
+// A normal indexed cel precedes it so other Aseprite builds can show a fallback.
+#define ASE_FILE_CHUNK_KARN_RGB_CEL      0x4b52
 #define ASE_FILE_CHUNK_CEL_EXTRA         0x2006
 #define ASE_FILE_CHUNK_COLOR_PROFILE     0x2007
 #define ASE_FILE_CHUNK_EXTERNAL_FILE     0x2008

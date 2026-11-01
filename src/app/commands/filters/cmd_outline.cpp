@@ -246,7 +246,7 @@ void OutlineCommand::onExecute(Context* context)
     filter.tiledMode(params().tiledMode());
 
   FilterManagerImpl filterMgr(context, &filter);
-  filterMgr.setTarget(site.sprite()->pixelFormat() == IMAGE_INDEXED ?
+  filterMgr.setTarget(site.pixelFormat() == IMAGE_INDEXED ?
                         TARGET_INDEX_CHANNEL :
                         TARGET_RED_CHANNEL | TARGET_GREEN_CHANNEL | TARGET_BLUE_CHANNEL |
                           TARGET_GRAY_CHANNEL | TARGET_ALPHA_CHANNEL);

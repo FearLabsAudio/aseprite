@@ -28,6 +28,10 @@
 #include "app/ui/editor/editor_render.h"
 #include "app/ui/rgbmap_algorithm_selector.h"
 #include "app/ui/skin/skin_theme.h"
+#include "app/util/indexed_conversion.h"
+#include "app/util/palette_bank.h"
+#include "doc/cel.h"
+#include "doc/mask.h"
 #include "doc/color_mode.h"
 #include "doc/image.h"
 #include "doc/layer.h"
@@ -40,17 +44,28 @@
 #include "render/task_delegate.h"
 #include "ui/listitem.h"
 #include "ui/size_hint_event.h"
+#include "ui/scale.h"
 
 #include "color_mode.xml.h"
 
 #include <string>
 #include <thread>
+#include <atomic>
 
 namespace app {
 
 using namespace ui;
 
 namespace {
+
+struct ConversionSource {
+  doc::ImageRef image;
+  doc::Palette palette;
+  doc::Layer* layer;
+  gfx::Point position;
+  int transparent;
+  bool paste;
+};
 
 rgba_to_graya_func get_gray_func(gen::ToGrayAlgorithm toGray)
 {
@@ -64,6 +79,57 @@ rgba_to_graya_func get_gray_func(gen::ToGrayAlgorithm toGray)
 
 class ConvertThread : public render::TaskDelegate {
 public:
+  ConvertThread(const doc::ImageRef& dstImage, const doc::Sprite* sprite,
+                doc::frame_t frame, const gfx::Point& pos,
+                const ConversionSource& source, const IndexedConversionOptions& options)
+    : m_image(dstImage), m_pos(pos), m_running(true), m_stopFlag(false), m_progress(0.0)
+    , m_thread([this, sprite, frame, source, options] {
+      auto indexed = convert_to_indexed(source.image.get(), source.palette,
+                                        source.transparent, options, this);
+      if (!m_stopFlag) {
+        doc::ImageRef rgba(render::convert_pixel_format(indexed.get(), nullptr, IMAGE_RGB,
+          render::Dithering(), nullptr, &source.palette, source.transparent < 0, 0));
+        render::Render renderer;
+        renderer.setNewBlend(Preferences::instance().experimental.newBlend());
+        renderer.setComposeGroups(true);
+        gfx::Point origin = source.position;
+        auto* cel = source.layer->cel(frame);
+        // Paste replaces nontransparent indexed pixels, preserving the existing
+        // cel underneath. Compose before applying layer opacity/blending.
+        if (source.paste && cel) {
+          const gfx::Rect bounds = cel->bounds() |
+            gfx::Rect(origin, rgba->size());
+          doc::ImageRef combined(Image::create(IMAGE_RGB, bounds.w, bounds.h));
+          combined->clear(0);
+          renderer.renderCel(combined.get(), cel, sprite, cel->image(), source.layer->tileset(),
+            sprite->palette(frame), cel->bounds(),
+            gfx::Clip(0, 0, bounds), 255, doc::BlendMode::SRC);
+          for (int y = 0; y < indexed->height(); ++y)
+            for (int x = 0; x < indexed->width(); ++x)
+              if (indexed->getPixel(x, y) != source.transparent)
+                combined->putPixel(origin.x - bounds.x + x, origin.y - bounds.y + y,
+                                   rgba->getPixel(x, y));
+          rgba = combined;
+          origin = bounds.origin();
+        }
+        doc::Cel extra(frame, rgba);
+        extra.setPosition(origin);
+        if (cel)
+          renderer.setPreviewImage(source.layer, frame, rgba.get(), nullptr, origin,
+                                   doc::BlendMode::SRC);
+        else {
+          extra.setOpacity(source.layer->opacity());
+          renderer.setExtraImage(render::ExtraType::OVER_COMPOSITE, &extra, rgba.get(),
+                                 source.layer->blendMode(), source.layer, frame);
+        }
+        renderer.renderSprite(m_image.get(), sprite, frame,
+          gfx::Clip(0, 0, m_pos.x, m_pos.y, m_image->width(), m_image->height()));
+      }
+      m_running = false;
+    })
+  {
+  }
+
   ConvertThread(const doc::ImageRef& dstImage,
                 const doc::Sprite* sprite,
                 const doc::frame_t frame,
@@ -138,9 +204,9 @@ private:
 
   doc::ImageRef m_image;
   gfx::Point m_pos;
-  bool m_running;
-  bool m_stopFlag;
-  double m_progress;
+  std::atomic<bool> m_running;
+  std::atomic<bool> m_stopFlag;
+  std::atomic<double> m_progress;
   std::thread m_thread;
 };
 
@@ -166,7 +232,7 @@ private:
 
 class ColorModeWindow : public app::gen::ColorMode {
 public:
-  ColorModeWindow(Editor* editor)
+  ColorModeWindow(Editor* editor, const ConversionSource* source = nullptr)
     : m_timer(100)
     , m_editor(editor)
     , m_image(nullptr)
@@ -176,9 +242,10 @@ public:
     , m_mapAlgorithmSelector(nullptr)
     , m_bestFitCriteriaSelector(nullptr)
     , m_imageJustCreated(true)
+    , m_source(source)
   {
     const auto& pref = Preferences::instance();
-    const doc::ColorMode from = m_editor->sprite()->colorMode();
+    const doc::ColorMode from = source ? doc::ColorMode::RGB : m_editor->sprite()->colorMode();
 
     // Add the color mode in the window title
     std::string fromMode;
@@ -190,6 +257,11 @@ public:
       case doc::ColorMode::INDEXED: fromMode = Strings::commands_ChangePixelFormat_Indexed(); break;
     }
     setText(fmt::format("{}: {}", text(), fromMode));
+    if (source) {
+      setText(text() + (source->paste ? " - Paste" : " - " + source->layer->name()));
+      setMinSize(gfx::Size(320 * ui::guiscale(), 0));
+      flatten()->setVisible(false);
+    }
 
     // Add conversion items
     if (from != doc::ColorMode::RGB)
@@ -197,7 +269,8 @@ public:
     if (from != doc::ColorMode::INDEXED) {
       colorMode()->addChild(new ConversionItem(doc::ColorMode::INDEXED));
 
-      m_ditheringSelector = new DitheringSelector(DitheringSelector::SelectBoth);
+      m_ditheringSelector = new DitheringSelector(DitheringSelector::SelectBoth,
+                                                 source ? &source->palette : nullptr);
       m_ditheringSelector->setExpansive(true);
 
       m_mapAlgorithmSelector = new RgbMapAlgorithmSelector;
@@ -243,7 +316,7 @@ public:
       advancedCheck()->setVisible(false);
       advanced()->setVisible(false);
     }
-    if (from != doc::ColorMode::GRAYSCALE) {
+    if (!source && from != doc::ColorMode::GRAYSCALE) {
       colorMode()->addChild(new ConversionItem(doc::ColorMode::GRAYSCALE));
 
       toGrayCombobox()->Change.connect([this] { onToGrayChange(); });
@@ -371,6 +444,22 @@ private:
       toGrayCombobox()->setVisible(toGray);
     }
 
+    if (m_source) {
+      m_previewPosition = visibleBounds.origin();
+      // Publish only completed buffers; the worker never writes a displayed image.
+      m_image.reset(Image::create(IMAGE_RGB, visibleBounds.w, visibleBounds.h));
+      m_image->clear(0);
+      progress()->setValue(0);
+      progress()->setVisible(false);
+      expandWindow(sizeHint());
+      layout();
+      IndexedConversionOptions options{ dithering(), rgbMapAlgorithm(), fitCriteria() };
+      m_bgThread.reset(new ConvertThread(m_image, m_editor->sprite(), m_editor->frame(),
+                                        m_previewPosition, *m_source, options));
+      m_timer.start();
+      return;
+    }
+
     m_image.reset(
       Image::create(ImageSpec(dstColorMode, visibleBounds.w, visibleBounds.h, 0), m_imageBuffer));
     if (m_imageJustCreated) {
@@ -432,6 +521,10 @@ private:
       m_bgThread->stop();
       m_bgThread.reset(nullptr);
 
+      if (m_source)
+        m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_image.get(),
+          nullptr, m_previewPosition, doc::BlendMode::SRC);
+
       progress()->setVisible(false);
       layout();
     }
@@ -459,9 +552,57 @@ private:
   RgbMapAlgorithmSelector* m_mapAlgorithmSelector;
   BestFitCriteriaSelector* m_bestFitCriteriaSelector;
   bool m_imageJustCreated;
+  const ConversionSource* m_source;
+  gfx::Point m_previewPosition;
 };
 
 } // anonymous namespace
+
+bool choose_indexed_conversion(Editor* editor, doc::Layer* layer,
+                               const doc::ImageRef& source, const gfx::Point& position,
+                               const doc::Palette& palette, int transparent,
+                               bool paste, IndexedConversionOptions& options,
+                               const doc::Mask* mask)
+{
+  if (!editor || !layer || editor->sprite() != layer->sprite())
+    return true;
+  ConversionSource input{ doc::ImageRef(Image::createCopy(source.get())), palette,
+                          layer, position, transparent, paste };
+  if (mask && !mask->isEmpty()) {
+    for (int y = 0; y < input.image->height(); ++y)
+      for (int x = 0; x < input.image->width(); ++x)
+        if (!mask->containsPoint(position.x + x, position.y + y))
+          input.image->putPixel(x, y, 0);
+  }
+  ColorModeWindow window(editor, &input);
+  window.remapWindow();
+  window.centerWindow();
+  load_window_pos(&window, "ChangePixelFormat");
+  window.openWindowInForeground();
+  save_window_pos(&window, "ChangePixelFormat");
+  if (window.closer() != window.ok())
+    return false;
+  options = { window.dithering(), window.rgbMapAlgorithm(), window.fitCriteria() };
+  window.saveOptions();
+  return true;
+}
+
+bool choose_palette_bank_conversion(doc::Layer* layer, int bank,
+                                    IndexedConversionOptions& options)
+{
+  if (!layer->isRgbReference() || bank == -2 || !App::instance()->isGui())
+    return true;
+  auto* editor = Editor::activeEditor();
+  if (!editor || editor->sprite() != layer->sprite())
+    return true;
+  auto* cel = layer->cel(editor->frame());
+  doc::ImageRef image = cel ? cel->imageRef() : doc::ImageRef(Image::create(IMAGE_RGB, 1, 1));
+  if (!cel)
+    image->clear(0);
+  const auto palette = palette_for_bank_conversion(layer, bank, editor->frame());
+  return choose_indexed_conversion(editor, layer, image, cel ? cel->position() : gfx::Point(),
+    palette, bank >= 0 ? 0 : layer->sprite()->transparentColor(), false, options);
+}
 
 struct ChangePixelFormatParams : public NewParams {
   Param<bool> ui{ this, false, "ui" };

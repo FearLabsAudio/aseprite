@@ -778,7 +778,7 @@ void PixelsMovement::getDraggedImageCopy(std::unique_ptr<Image>& outputImage,
   }
   else {
     imgSize = bounds.size();
-    pixelFormat = m_site.sprite()->pixelFormat();
+    pixelFormat = m_site.pixelFormat();
   }
 
   std::unique_ptr<Image> image(Image::create(pixelFormat, imgSize.w, imgSize.h));
@@ -1165,7 +1165,8 @@ void PixelsMovement::redrawExtraImage(Transformation* transformation)
                        bounds,
                        extraCelSize,
                        m_site.frame(),
-                       opacity);
+                       opacity,
+                       m_site.pixelFormat());
     m_extraCel->setType(render::ExtraType::PATCH);
     m_extraCel->setBlendMode(m_site.layer()->isImage() ?
                                static_cast<LayerImage*>(m_site.layer())->blendMode() :

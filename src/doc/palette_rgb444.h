@@ -5,6 +5,7 @@
 
 #include "doc/palette.h"
 #include "doc/sprite.h"
+#include "doc/karn_rules.h"
 
 namespace doc {
 
@@ -14,6 +15,8 @@ inline bool force_rgb444(const Sprite* sprite)
 {
   if (!sprite)
     return false;
+  if (force_karn_rules(sprite))
+    return true;
   const auto& maps = sprite->userData().propertiesMaps();
   const auto group = maps.find(kRgb444Properties);
   if (group != maps.end()) {

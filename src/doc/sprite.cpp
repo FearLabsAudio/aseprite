@@ -701,7 +701,7 @@ void Sprite::pickCels(const gfx::PointF& pos,
 
     bool isOpaque = true;
 
-    switch (pixelFormat()) {
+    switch (cel->layer()->pixelFormat()) {
       case IMAGE_RGB:       isOpaque = (rgba_geta(color) >= opacityThreshold); break;
       case IMAGE_INDEXED:   isOpaque = (color != transparentColor()); break;
       case IMAGE_GRAYSCALE: isOpaque = (graya_geta(color) >= opacityThreshold); break;

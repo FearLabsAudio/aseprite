@@ -481,6 +481,7 @@ target_sources(app-lib PRIVATE
   commands/cmd_set_loop_section.cpp
   commands/cmd_set_palette.cpp
   commands/cmd_force_4_bit_color_channels.cpp
+  commands/cmd_force_karn_rules.cpp
   commands/cmd_set_palette_entry_size.cpp
   commands/cmd_set_same_ink.cpp
   commands/cmd_show.cpp
@@ -600,6 +601,7 @@ target_sources(app-lib PRIVATE
   tools/tool_loop_manager.cpp
   tools/velocity.cpp
   transaction.cpp
+  util/karn_rules.cpp
   transformation.cpp
   ui/alpha_entry.cpp
   ui/alpha_slider.cpp

@@ -485,7 +485,7 @@ int Layer_set_tileset(lua_State* L)
 int Layer_renderLocal(lua_State* L)
 {
   auto* layer = get_docobj<Layer>(L, 1);
-  if (!layer->isImage() || layer->isReference() || layer->sprite()->pixelFormat() != IMAGE_INDEXED)
+  if (!layer->isImage() || layer->isReference() || layer->pixelFormat() != IMAGE_INDEXED)
     return luaL_error(L, "renderLocal requires an indexed image or tilemap layer");
   const auto frame = get_frame_number_from_arg(L, 2);
   auto image = std::unique_ptr<Image>(Image::create(layer->sprite()->spec()));
@@ -509,15 +509,36 @@ int Layer_set_paletteBank(lua_State* L)
 {
   auto* layer = get_docobj<Layer>(L, 1);
   const lua_Integer bank = luaL_checkinteger(L, 2);
-  if (bank < -1 || bank > 15)
-    return luaL_error(L, "Palette bank must be -1 or between 0 and 15");
+  if (bank < -2 || bank > 15)
+    return luaL_error(L, "Palette bank must be -2 (Full color Reference), -1, or 0-15");
   Tx tx(layer->sprite());
   set_layer_palette_bank(tx, layer, bank);
   tx.commit();
   return 0;
 }
 
+// Explicit interactive entry point for the bank editor. The property setter stays
+// nonmodal for scripts and transactions, just like ChangePixelFormat{ui=false}.
+int Layer_convertPaletteBank(lua_State* L)
+{
+  auto* layer = get_docobj<Layer>(L, 1);
+  const lua_Integer bank = luaL_checkinteger(L, 2);
+  if (bank < -2 || bank > 15)
+    return luaL_error(L, "Palette bank must be -2 (Full color Reference), -1, or 0-15");
+  IndexedConversionOptions options;
+  if (!choose_palette_bank_conversion(layer, int(bank), options)) {
+    lua_pushboolean(L, false);
+    return 1;
+  }
+  Tx tx(layer->sprite());
+  set_layer_palette_bank(tx, layer, int(bank), options);
+  tx.commit();
+  lua_pushboolean(L, true);
+  return 1;
+}
+
 const luaL_Reg Layer_methods[] = {
+  { "convertPaletteBank", Layer_convertPaletteBank },
   { "renderLocal", Layer_renderLocal },
   { "__eq",  Layer_eq  },
   { "cel",   Layer_cel },

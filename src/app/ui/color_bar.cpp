@@ -686,6 +686,7 @@ void ColorBar::onResize(ui::ResizeEvent& ev)
 
 void ColorBar::onActiveSiteChange(const Site& site)
 {
+  setPixelFormat(site.pixelFormat());
   if (site.sprite() && doc::has_palette_banks(site.sprite()))
     hideRemapPal();
   if (m_lastDocument != site.document()) {
@@ -717,7 +718,7 @@ void ColorBar::onActiveSiteChange(const Site& site)
   m_tilesButton.setVisible(isTilemap);
   m_tilesetModeButtons.setVisible(isTilemap);
   m_paletteBanksButton.setVisible(hasBanks);
-  m_force4BitButton.setVisible(hasBanks);
+  m_force4BitButton.setVisible(hasBanks && site.pixelFormat() == IMAGE_INDEXED);
   m_force4BitButton.setSelected(doc::force_rgb444(site.sprite()));
   updateFromTilemapMode();
 
@@ -736,7 +737,15 @@ void ColorBar::onActiveSiteChange(const Site& site)
 
 void ColorBar::onGeneralUpdate(DocEvent& ev)
 {
+  setPixelFormat(UIContext::instance()->activeSite().pixelFormat());
   // TODO Observe palette changes only
+  invalidate();
+}
+
+void ColorBar::onUserDataChange(DocEvent& ev)
+{
+  onActiveSiteChange(UIContext::instance()->activeSite());
+  layout();
   invalidate();
 }
 
@@ -802,7 +811,8 @@ void ColorBar::onAfterExecuteCommand(CommandExecutionEvent& ev)
   // undone a "RGB -> Indexed" conversion), we hide the "Remap
   // Palette" button.
   Site site = UIContext::instance()->activeSite();
-  const bool indexed = site.sprite() && site.sprite()->pixelFormat() == IMAGE_INDEXED;
+  const bool indexed = site.sprite() && site.pixelFormat() == IMAGE_INDEXED;
+  setPixelFormat(site.pixelFormat());
   m_force4BitButton.setSelected(doc::force_rgb444(site.sprite()));
   if (m_force4BitButton.isVisible() != indexed) {
     m_force4BitButton.setVisible(indexed);

@@ -17,6 +17,7 @@
 #include "doc/frame.h"
 #include "doc/layer_list.h"
 #include "doc/object.h"
+#include "doc/pixel_format.h"
 #include "doc/with_user_data.h"
 
 #include <string>
@@ -79,8 +80,10 @@ public:
   void setName(const std::string& name) { m_name = name; }
 
   Sprite* sprite() const { return m_sprite; }
-  // -1: document indices; 0..15: local 4bpp indices, zero transparent.
+  // -2: editable RGB reference; -1: document; 0..15: local 4bpp indices.
   int paletteBank() const;
+  bool isRgbReference() const { return paletteBank() == -2; }
+  PixelFormat pixelFormat() const;
   Palette* palette(frame_t frame) const;
   RgbMap* rgbMap(frame_t frame) const;
   Layer* parent() const { return m_parent; }

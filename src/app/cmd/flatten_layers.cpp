@@ -31,6 +31,7 @@
 #include "doc/algorithm/shrink_bounds.h"
 #include "doc/cel.h"
 #include "doc/layer.h"
+#include "doc/palette_bank.h"
 #include "doc/primitives.h"
 #include "doc/sprite.h"
 #include "render/render.h"
@@ -120,6 +121,26 @@ void FlattenLayers::onExecute()
   }
 
   render::Render render;
+  // Merging into a Full color Reference bank must retain RGBA pixels.
+  // New flattened layers also retain RGB if any selected image uses that bank.
+  bool rgbReference = flatLayer->isRgbReference();
+  if (newFlatLayer) {
+    for (auto* layer : sprite->allLayers()) {
+      if (!layer->isRgbReference())
+        continue;
+      for (auto* selected : layers)
+        if (layer == selected || layer->hasAncestor(selected))
+          rgbReference = true;
+    }
+    if (rgbReference)
+      flatLayer->userData().properties(kPaletteBankProperties)["bank"] = int8_t(-2);
+  }
+  if (rgbReference) {
+    spec.setColorMode(ColorMode::RGB);
+    spec.setMaskColor(0);
+    image.reset(Image::create(spec));
+    bgcolor = 0;
+  }
   render.setNewBlend(m_options.newBlendMethod);
   render.setBgOptions(render::BgOptions::MakeNone());
 

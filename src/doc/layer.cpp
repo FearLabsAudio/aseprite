@@ -16,6 +16,7 @@
 #include "doc/image.h"
 #include "doc/layer_tilemap.h"
 #include "doc/palette_bank.h"
+#include "doc/karn_rules.h"
 #include "doc/octree_map.h"
 #include "doc/primitives.h"
 #include "doc/sprite.h"
@@ -45,7 +46,7 @@ Layer::~Layer()
 
 int Layer::paletteBank() const
 {
-  if (!isImage() || isReference() || sprite()->pixelFormat() != IMAGE_INDEXED)
+  if (!isImage() || isReference())
     return -1;
   const auto& maps = userData().propertiesMaps();
   const auto group = maps.find(kPaletteBankProperties);
@@ -54,20 +55,29 @@ int Layer::paletteBank() const
   const auto entry = group->second.find("bank");
   if (entry == group->second.end())
     return -1;
-  return std::visit([](const auto& value) -> int {
+  return std::visit([this](const auto& value) -> int {
     using T = std::decay_t<decltype(value)>;
-    if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
-      return value >= 0 && value < 16 ? int(value) : -1;
+    if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+      if constexpr (std::is_signed_v<T>)
+        if (value == -2)
+          return -2;
+      return sprite()->pixelFormat() == IMAGE_INDEXED && value >= 0 && value < 16 ? int(value) : -1;
+    }
     return -1;
   }, static_cast<const UserData::VariantBase&>(entry->second));
+}
+
+PixelFormat Layer::pixelFormat() const
+{
+  return isRgbReference() ? IMAGE_RGB : sprite()->pixelFormat();
 }
 
 Palette* Layer::palette(frame_t frame) const
 {
   const int bank = paletteBank();
-  if (bank < 0)
+  if (isRgbReference() || (bank < 0 && !force_karn_rules(sprite())))
     return sprite()->palette(frame);
-  Palette local = make_bank_palette(*sprite()->palette(frame), bank);
+  Palette local = make_bank_palette(*sprite()->palette(frame), std::max(0, bank));
   if (!m_bankPalette)
     m_bankPalette.reset(new Palette(local));
   else if (*m_bankPalette != local)
@@ -77,7 +87,7 @@ Palette* Layer::palette(frame_t frame) const
 
 RgbMap* Layer::rgbMap(frame_t frame) const
 {
-  if (paletteBank() < 0)
+  if (isRgbReference() || (paletteBank() < 0 && !force_karn_rules(sprite())))
     return sprite()->rgbMap(frame);
   if (!m_bankRgbMap)
     m_bankRgbMap.reset(new OctreeMap);

@@ -1,4 +1,4 @@
--- Collages composite exact indices within the winning tile's palette bank.
+-- Unmerged collages use the topmost nonempty tile, even within the same bank.
 local E=dofile(app.params.exporter or '../data/extensions/karn-palette-banks/export.lua')
 local root=E.absolute(app.params.output or '_test_karn_collage_merge')
 assert(app.fs.makeAllDirectories(root..'/src'))
@@ -46,8 +46,8 @@ assert(cell(0,0).TileKitId==plan.rows[4].kitId)
 assert(cell(1,0).TileKitId==plan.rows[3].kitId,'Empty top tile must not steal the bank')
 assert(cell(2,0).TileKitId==plan.rows[1].kitId)
 local topBmp=Image{fromFile=plan.rows[4].bmp}
-assert(topBmp:getPixel(0,0)==7 and topBmp:getPixel(1,0)==6 and topBmp:getPixel(2,0)==5,
-  'Composite all lower same-bank layers, including across an intervening different bank')
+assert(topBmp:getPixel(0,0)==7 and topBmp:getPixel(1,0)==0 and topBmp:getPixel(2,0)==0,
+  'Unmerged sources must not bake lower same-bank pixels into upper tiles')
 assert(topBmp:getPixel(3,0)==0,'Different banks cannot fill transparent holes')
 assert(topBmp:getPixel(8,0)==0 and topBmp:getPixel(16,0)==0,'Originally empty upper cells stay empty')
 assert(topBmp.width==32 and topBmp.height==16 and topBmp:getPixel(24,0)==8 and topBmp:getPixel(25,0)==0)
@@ -67,8 +67,8 @@ app.undo()
 -- Rebuild the fixture for KarnEdit's actual collage resolver.
 local final=E.prepare(s,options); E.write(final)
 write(root..'/manifest.json',json.encode{workspace=root,tilekits=options.tilekits,
-  checks={{cell=0,pixels={7,6,5,0},bank=2},{cell=1,pixels={10,0,0,0},bank=3},
+  checks={{cell=0,pixels={7,0,0,0},bank=2},{cell=1,pixels={10,0,0,0},bank=3},
     {cell=2,pixels={5,5,5,5},bank=2},{cell=3,pixels={8,0,0,0},bank=2},
     {cell=16,pixels={5,5,5,5},bank=2}}})
 s:close()
-print('Collage same-bank compositing, distinct-bank isolation, empty tiles, padding and stable updates: PASS')
+print('Unmerged collage topmost tiles, bank isolation, empty tiles, padding and stable updates: PASS')

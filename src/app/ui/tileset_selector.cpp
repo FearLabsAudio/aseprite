@@ -13,6 +13,7 @@
 #include "app/i18n/strings.h"
 #include "app/pref/preferences.h"
 #include "doc/sprite.h"
+#include "doc/karn_rules.h"
 #include "doc/tilesets.h"
 #include "fmt/format.h"
 #include "ui/listitem.h"
@@ -115,6 +116,18 @@ void TilesetSelector::updateControlsState()
     yflip()->setEnabled(false);
     dflip()->setEnabled(false);
   }
+  if (doc::force_karn_rules(m_sprite)) {
+    gridWidth()->setText("8");
+    gridHeight()->setText("8");
+    gridWidth()->setEnabled(false);
+    gridHeight()->setEnabled(false);
+    xflip()->setSelected(true);
+    yflip()->setSelected(true);
+    dflip()->setSelected(false);
+    xflip()->setEnabled(false);
+    yflip()->setEnabled(false);
+    dflip()->setEnabled(false);
+  }
 }
 
 void TilesetSelector::updateControlsVisibility()
@@ -159,6 +172,10 @@ TilesetSelector::Info TilesetSelector::getInfo()
                       (dflip()->isSelected() ? doc::tile_f_dflip : 0);
   }
 
+  if (doc::force_karn_rules(m_sprite)) {
+    info.grid = doc::Grid(gfx::Size(8, 8));
+    info.matchFlags = doc::kKarnMatchFlags;
+  }
   return info;
 }
 

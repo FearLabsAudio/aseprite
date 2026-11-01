@@ -12,6 +12,7 @@
 #include "app/cmd_transaction.h"
 #include "app/doc_observer.h"
 #include "base/exception.h"
+#include "app/util/karn_rules.h"
 
 #include <string>
 
@@ -122,6 +123,7 @@ private:
   DocUndo* m_undo;
   CmdTransaction* m_cmds;
   Changes m_changes;
+  KarnImageVersions m_karnImages;
 };
 
 } // namespace app

@@ -90,7 +90,8 @@ private:
   void writeCelChunk(AsepriteFrameHeader* frame_header,
                      const doc::Cel* cel,
                      const doc::LayerImage* layer,
-                     const doc::layer_t layer_index);
+                     const doc::layer_t layer_index,
+                     bool rgbPayload = false);
   void writeCelExtraChunk(AsepriteFrameHeader* frame_header, const doc::Cel* cel);
 
   void writeColorProfile(AsepriteFrameHeader* frame_header, const doc::Sprite* sprite);

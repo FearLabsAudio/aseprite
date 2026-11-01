@@ -24,6 +24,11 @@
 
 namespace app {
 
+doc::PixelFormat Site::pixelFormat() const
+{
+  return m_layer ? m_layer->pixelFormat() : m_sprite ? m_sprite->pixelFormat() : doc::IMAGE_RGB;
+}
+
 using namespace doc;
 
 Palette* Site::palette()

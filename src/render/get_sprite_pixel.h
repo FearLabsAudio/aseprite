@@ -11,6 +11,7 @@
 
 #include "doc/color.h"
 #include "doc/frame.h"
+#include "doc/pixel_format.h"
 
 namespace doc {
 class Sprite;
@@ -30,7 +31,8 @@ color_t get_sprite_pixel(const Sprite* sprite,
                          const frame_t frame,
                          const Projection& proj,
                          const bool newBlend,
-                         const bool composeGroups);
+                         const bool composeGroups,
+                         const PixelFormat pixelFormat = IMAGE_BITMAP);
 
 } // namespace render
 

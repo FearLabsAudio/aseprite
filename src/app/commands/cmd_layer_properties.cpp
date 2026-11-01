@@ -33,6 +33,7 @@
 #include "app/ui/user_data_view.h"
 #include "app/ui_context.h"
 #include "app/util/palette_bank.h"
+#include "ui/alert.h"
 #include "base/convert_to.h"
 #include "base/scoped_value.h"
 #include "doc/layer.h"
@@ -130,20 +131,28 @@ public:
     userData()->Click.connect([this] { onToggleUserData(); });
     tileset()->Click.connect([this] { onTileset(); });
     tileset()->setVisible(false);
+    paletteBank()->addItem("Full color Reference");
     paletteBank()->addItem(Strings::layer_properties_document_palette());
     for (int bank = 0; bank < 16; ++bank)
       paletteBank()->addItem("Bank " + std::to_string(bank) + " (" +
                              std::to_string(bank * 16) + "-" +
                              std::to_string(bank * 16 + 15) + ")");
-    paletteBank()->Change.connect([this] {
+    paletteBank()->Confirm.connect([this] {
       if (m_selfUpdate || !m_layer)
         return;
-      const int bank = paletteBank()->getSelectedItemIndex() - 1;
+      const int bank = paletteBank()->getSelectedItemIndex() - 2;
+      if (bank == m_layer->paletteBank())
+        return;
       onCommitChange();
       try {
+        IndexedConversionOptions options;
+        if (!choose_palette_bank_conversion(m_layer, bank, options)) {
+          updateFromLayer();
+          return;
+        }
         ContextWriter writer(UIContext::instance());
         Tx tx(writer, "Set Palette Bank");
-        set_layer_palette_bank(tx, m_layer, bank);
+        set_layer_palette_bank(tx, m_layer, bank, options);
         tx.commit();
         app_refresh_screen();
       }
@@ -482,13 +491,14 @@ private:
     paletteBankLabel()->setVisible(bankVisible);
     paletteBank()->setVisible(bankVisible);
     paletteBank()->deleteAllItems();
+    paletteBank()->addItem("Full color Reference");
     paletteBank()->addItem(Strings::layer_properties_document_palette());
     for (int bank = 0; bank < 16; ++bank) {
       const std::string bankTitle = m_layer ? doc::palette_bank_name(m_layer->sprite(), bank) : "";
       paletteBank()->addItem("Bank " + std::to_string(bank) +
                              (bankTitle.empty() ? "" : " - " + bankTitle));
     }
-    paletteBank()->setSelectedItemIndex(bankVisible ? m_layer->paletteBank() + 1 : 0);
+    paletteBank()->setSelectedItemIndex(bankVisible ? m_layer->paletteBank() + 2 : 0);
     const bool namedBank = bankVisible && m_layer->paletteBank() >= 0;
     bankNameLabel()->setVisible(namedBank);
     bankName()->setVisible(namedBank);

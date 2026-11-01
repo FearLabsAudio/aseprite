@@ -152,7 +152,7 @@ public:
     m_color = loop->getPrimaryColor();
 
     if (loop->getLayer()->isBackground()) {
-      switch (loop->sprite()->pixelFormat()) {
+      switch (loop->pixelFormat()) {
         case IMAGE_RGB:       m_color |= rgba_a_mask; break;
         case IMAGE_GRAYSCALE: m_color |= graya_a_mask; break;
       }
@@ -626,7 +626,7 @@ public:
     m_color1 = loop->getPrimaryColor();
     m_color2 = loop->getSecondaryColor();
     if (loop->getLayer()->isBackground()) {
-      switch (loop->sprite()->pixelFormat()) {
+      switch (loop->pixelFormat()) {
         case IMAGE_RGB:       m_color2 |= rgba_a_mask; break;
         case IMAGE_GRAYSCALE: m_color2 |= graya_a_mask; break;
       }
@@ -1207,7 +1207,7 @@ public:
     m_u = (m_brush->patternOrigin().x - loop->getCelOrigin().x) % m_width;
     m_v = (m_brush->patternOrigin().y - loop->getCelOrigin().y) % m_height;
 
-    if (loop->sprite()->colorMode() == ColorMode::INDEXED) {
+    if (loop->pixelFormat() == IMAGE_INDEXED) {
       if (loop->getLayer()->isTransparent())
         m_transparentColor = loop->sprite()->transparentColor();
       else
@@ -2027,7 +2027,7 @@ void BrushCopyInkProcessing<GrayscaleTraits>::processPixel(int x, int y)
 template<template<typename> class T>
 BaseInkProcessing* get_ink_proc(ToolLoop* loop)
 {
-  switch (loop->sprite()->pixelFormat()) {
+  switch (loop->pixelFormat()) {
     case IMAGE_RGB:       return new T<RgbTraits>(loop);
     case IMAGE_GRAYSCALE: return new T<GrayscaleTraits>(loop);
     case IMAGE_INDEXED:   return new T<IndexedTraits>(loop);

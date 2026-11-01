@@ -46,6 +46,8 @@ protected:
     auto* sprite = writer.sprite();
     const bool previous = doc::force_rgb444(sprite);
     const bool enabled = m_enabled < 0 ? !previous : m_enabled != 0;
+    if (!enabled && doc::force_karn_rules(sprite))
+      throw std::runtime_error("Disable Force KARN rules before turning off 4-bit color channels.");
     if (enabled == previous)
       return;
 

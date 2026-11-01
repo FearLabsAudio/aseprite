@@ -20,6 +20,7 @@
 #include "dio/file_interface.h"
 #include "dio/pixel_io.h"
 #include "doc/doc.h"
+#include "doc/octree_map.h"
 #include "fixmath/fixmath.h"
 #include "fmt/format.h"
 #include "zlib.h"
@@ -283,6 +284,8 @@ layer_t AsepriteEncoder::writeCels(AsepriteFrameHeader* frame_header,
     const Cel* cel = layer->cel(frame);
     if (cel) {
       writeCelChunk(frame_header, cel, static_cast<const LayerImage*>(layer), layer_index);
+      if (layer->isRgbReference() && sprite->pixelFormat() == IMAGE_INDEXED)
+        writeCelChunk(frame_header, cel, static_cast<const LayerImage*>(layer), layer_index, true);
 
       if (layer->isReference())
         writeCelExtraChunk(frame_header, cel);
@@ -643,9 +646,13 @@ void write_compressed_image(FileInterface* f,
 void AsepriteEncoder::writeCelChunk(AsepriteFrameHeader* frame_header,
                                     const Cel* cel,
                                     const LayerImage* layer,
-                                    const layer_t layer_index)
+                                    const layer_t layer_index,
+                                    bool rgbPayload)
 {
-  const ChunkWriter chunk(this, frame_header, ASE_FILE_CHUNK_CEL);
+  const ChunkWriter chunk(this, frame_header,
+    rgbPayload ? ASE_FILE_CHUNK_KARN_RGB_CEL : ASE_FILE_CHUNK_CEL);
+  if (rgbPayload)
+    write32(0x31424752); // "RGB1", versioned private payload
   const frame_t firstFrame = delegate()->fromFrame();
   const Cel* link = cel->link();
 
@@ -666,6 +673,25 @@ void AsepriteEncoder::writeCelChunk(AsepriteFrameHeader* frame_header,
                         cel->layer()->isTilemap() ? delegate()->preferredTilemapCelType() :
                                                     delegate()->preferredCelType());
 
+  const Image* pixels = cel->image();
+  ImageRef fallback;
+  if (!link && !rgbPayload && layer->isRgbReference() &&
+      layer->sprite()->pixelFormat() == IMAGE_INDEXED && pixels) {
+    fallback.reset(Image::create(IMAGE_INDEXED, pixels->width(), pixels->height()));
+    const auto* pal = layer->sprite()->palette(cel->frame());
+    const int mask = layer->sprite()->transparentColor();
+    OctreeMap map;
+    map.regenerateMap(pal, mask);
+    fallback->setMaskColor(mask);
+    for (int y = 0; y < pixels->height(); ++y)
+      for (int x = 0; x < pixels->width(); ++x) {
+        const auto c = pixels->getPixel(x, y);
+        fallback->putPixel(x, y, rgba_geta(c) < 128 ? mask :
+          map.mapColor(rgba(rgba_getr(c), rgba_getg(c), rgba_getb(c), 255)));
+      }
+    pixels = fallback.get();
+  }
+
   write16(layer_index);
   write16(cel->x());
   write16(cel->y());
@@ -676,7 +702,7 @@ void AsepriteEncoder::writeCelChunk(AsepriteFrameHeader* frame_header,
 
   switch (cel_type) {
     case ASE_FILE_RAW_CEL: {
-      const Image* image = cel->image();
+      const Image* image = pixels;
 
       if (image) {
         // Width and height
@@ -707,7 +733,7 @@ void AsepriteEncoder::writeCelChunk(AsepriteFrameHeader* frame_header,
       break;
 
     case ASE_FILE_COMPRESSED_CEL: {
-      const Image* image = cel->image();
+      const Image* image = pixels;
       ASSERT(image);
       if (image) {
         // Width and height

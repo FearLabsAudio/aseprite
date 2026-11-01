@@ -110,6 +110,7 @@ public:
 
   // DocObserver impl
   void onGeneralUpdate(DocEvent& ev) override;
+  void onUserDataChange(DocEvent& ev) override;
   void onTilesetChanged(DocEvent& ev) override;
   void onTileManagementPluginChange(DocEvent& ev) override;
 

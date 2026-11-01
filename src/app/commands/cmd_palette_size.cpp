@@ -16,6 +16,7 @@
 #include "app/i18n/strings.h"
 #include "app/tx.h"
 #include "doc/palette.h"
+#include "doc/karn_rules.h"
 
 #include "palette_size.xml.h"
 
@@ -53,7 +54,7 @@ void PaletteSizeCommand::onLoadParams(const Params& params)
 bool PaletteSizeCommand::onEnabled(Context* context)
 {
   const auto site = context->activeSite();
-  if (site.layer() && site.layer()->paletteBank() >= 0)
+  if (site.layer() && (site.layer()->paletteBank() >= 0 || doc::force_karn_rules(site.sprite())))
     return false;
   return context->checkFlags(ContextFlags::ActiveDocumentIsWritable);
 }

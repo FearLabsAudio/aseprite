@@ -185,10 +185,10 @@ public:
     ASSERT(m_controller);
 
     if (!m_tilesMode && m_ink->isPaint() && m_layer && m_layer->isTilemap() &&
-        m_layer->paletteBank() < 0 && doc::tileset_uses_palette_banks(m_layer->tileset()))
+        !doc::uses_local_palette(m_layer) && doc::tileset_uses_palette_banks(m_layer->tileset()))
       throw std::runtime_error("Assign a palette bank to this layer before editing its shared 4bpp tileset.");
 
-    if (!m_tilesMode && m_layer && m_layer->paletteBank() >= 0) {
+    if (!m_tilesMode && doc::uses_local_palette(m_layer)) {
       auto localColor = [&](const app::Color& color) -> color_t {
         if (color.getType() == app::Color::MaskType)
           return 0;
@@ -306,7 +306,7 @@ public:
       m_shade = App::instance()->contextBar()->getShade();
       m_shadingRemap.reset(
         App::instance()->contextBar()->createShadeRemap(m_button == tools::ToolLoop::Left));
-      if (m_shadingRemap && m_layer && m_layer->paletteBank() >= 0) {
+      if (m_shadingRemap && doc::uses_local_palette(m_layer)) {
         for (int i = 0; i < m_shadingRemap->size(); ++i)
           if (i == 0 || (*m_shadingRemap)[i] > 15)
             m_shadingRemap->map(i, i);
@@ -361,11 +361,11 @@ public:
   }
   RgbMap* getRgbMap() override
   {
-    if (m_layer && m_layer->paletteBank() >= 0)
+    if (doc::uses_local_palette(m_layer))
       return m_layer->rgbMap(m_frame);
     if (!m_rgbMap) {
       Sprite::RgbMapFor forLayer = (((m_layer && m_layer->isBackground()) ||
-                                     (m_sprite->pixelFormat() == IMAGE_RGB)) ?
+                                     (pixelFormat() == IMAGE_RGB)) ?
                                       Sprite::RgbMapFor::OpaqueLayer :
                                       Sprite::RgbMapFor::TransparentLayer);
       m_rgbMap = m_sprite->rgbMap(m_frame, forLayer);
@@ -574,7 +574,7 @@ public:
       // stop using all visible layers.
       else if (m_toolPref.floodfill.referTo() == gen::FillReferTo::ALL_LAYERS) {
         m_floodfillSrcImage =
-          Image::create(m_sprite->pixelFormat(), m_sprite->width(), m_sprite->height());
+          Image::create(pixelFormat(), m_sprite->width(), m_sprite->height());
 
         m_floodfillSrcImage->clear(m_sprite->transparentColor());
 
@@ -587,7 +587,7 @@ public:
       }
       else if (isSelectionToolLoop() && !m_layer->cel(m_frame)) {
         m_floodfillSrcImage =
-          Image::create(m_sprite->pixelFormat(), m_sprite->width(), m_sprite->height());
+          Image::create(pixelFormat(), m_sprite->width(), m_sprite->height());
 
         m_floodfillSrcImage->clear(m_sprite->transparentColor());
       }

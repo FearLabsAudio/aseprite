@@ -16,7 +16,7 @@ function UI.show(plugin,E,GROUP,BANKS,options)
   local s=app.sprite
   if not s or s.colorMode~=ColorMode.INDEXED then app.alert('Open an indexed document.'); return end
   local layers=E.layers(s,false)
-  if #layers==0 then app.alert('There are no image layers to export.'); return end
+  if #layers==0 then app.alert('There are no layers assigned to palette banks.'); return end
   local frame=app.frame.frameNumber
   local saved=decode(s.properties(GROUP).bmp)
   local settings=saved.bmpSettings or {}
@@ -27,8 +27,6 @@ function UI.show(plugin,E,GROUP,BANKS,options)
   local base=settings.baseName or app.fs.fileTitle(saved.output or s.filename)
   if not base or base=='' then base='Artwork' end
   local merged=settings.mergeByBank==true or (settings.mergeByBank==nil and saved.mergeByBank==true)
-  local needsMerge=options.forCollage and E.collageNeedsMerge(s)
-  if needsMerge then merged=true end
   local names,bankNames,selected={},{},{}
   local defaults=E.defaults(s,'bmp',app.fs.joinPath(folder,base..'.bmp'))
   for i,l in ipairs(layers) do
@@ -62,7 +60,6 @@ function UI.show(plugin,E,GROUP,BANKS,options)
     dlg:modify{id='summary',text=string.format('%d layers -> %d BMPs | Frame %d | %d x %d px',
       count,files,frame,((s.width+7)//8)*8,((s.height+7)//8)*8)}
     dlg:modify{id='export',enabled=count>0}
-    dlg:modify{id='exportNew',enabled=count>0}
     refreshing=false
   end
   local function resetNames()
@@ -83,14 +80,13 @@ function UI.show(plugin,E,GROUP,BANKS,options)
     refresh()
   end
   if options.forCollage then
-    dlg:label{text='Step 1: export visible layers for the collage.'}:newrow()
-    dlg:label{text=needsMerge and 'Shared banks require merged BMPs.' or
-      'TileKits will reuse these BMPs.'}:newrow()
+    dlg:label{text='Step 1: export visible palette-bank layers.'}:newrow()
+    dlg:label{text='Karnedit creates one TileKit per BMP. Merging is optional.'}:newrow()
   end
-  dlg:file{id='folder',label='Output folder:',filename=folder,folder=true,entry=true,title='Select BMP output folder'}
+  dlg:file{id='folder',label='BMP output folder:',filename=folder,folder=true,entry=true,title='Select BMP output folder'}
   dlg:entry{id='baseName',label='Base name:',text=base}
   dlg:samerow():button{text='Reset filenames',hexpand=false,onclick=resetNames}
-  dlg:check{id='merge',label='Output:',text='Merge layers sharing a palette bank',selected=merged,enabled=not needsMerge,
+  dlg:check{id='merge',label='Output:',text='Merge layers sharing a palette bank',selected=merged,
     onclick=function() merged=dlg.data.merge; refresh() end}
   if not options.forCollage then
     dlg:button{text='All',onclick=function() choose('all') end}
@@ -118,7 +114,7 @@ function UI.show(plugin,E,GROUP,BANKS,options)
   dlg:separator{}
   dlg:label{id='summary',text=''}
   dlg:newrow():label{text='Merged pixels follow the canvas layer order.'}
-  local function export(new)
+  local function export()
     attempt(function()
       local data=dlg.data
       local destination=E.absolute(data.folder)
@@ -131,10 +127,17 @@ function UI.show(plugin,E,GROUP,BANKS,options)
         remembered.selected[id]=selected[i]
         remembered.filenames[id]=names[i]
       end
-      local plan=E.bmpFromSettings(s,frame,remembered,new)
-      if options.forCollage then E.validateCollageBmps(s,frame,plan) end
+      local plan=E.bmpFromSettings(s,frame,remembered,false)
+      if options.forCollage then E.validateCollageBmps(s,frame,plan,false) end
       if #plan.warnings>0 and app.alert{title='KARN export warnings',text=plan.warnings,
         buttons={'Export unchanged','Cancel'}}~=1 then return end
+      for _,file in ipairs(plan.files) do
+        if file.original~=nil then
+          if app.alert{title='KARN BMP export',text='Overwrite / Update existing files?',
+            buttons={'Overwrite / Update','Cancel'}}~=1 then return end
+          break
+        end
+      end
       E.write(plan); E.remember(plan)
       completed=plan
       plugin.preferences.bmpFolder=destination
@@ -144,8 +147,7 @@ function UI.show(plugin,E,GROUP,BANKS,options)
       end
     end)
   end
-  dlg:button{id='export',text=options.forCollage and 'Update & Continue' or 'Export / Update',onclick=function() export(false) end}
-  dlg:samerow():button{id='exportNew',text='Export New',onclick=function() export(true) end}
+  dlg:button{id='export',text='Export',onclick=export}
   dlg:samerow():button{text='Cancel'}
   refresh()
   layout.show(dlg,plugin,'bmp')

@@ -25,12 +25,14 @@ color_t get_sprite_pixel(const Sprite* sprite,
                          const frame_t frame,
                          const Projection& proj,
                          const bool newBlend,
-                         const bool composeGroups)
+                         const bool composeGroups,
+                         const PixelFormat pixelFormat)
 {
   color_t color = 0;
 
   if ((x >= 0.0) && (x < sprite->width()) && (y >= 0.0) && (y < sprite->height())) {
-    std::unique_ptr<Image> image(Image::create(sprite->pixelFormat(), 1, 1));
+    std::unique_ptr<Image> image(Image::create(
+      pixelFormat == IMAGE_BITMAP ? sprite->pixelFormat() : pixelFormat, 1, 1));
 
     render::Render render;
     render.setNewBlend(newBlend);
