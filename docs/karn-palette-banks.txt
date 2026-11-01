@@ -1,5 +1,10 @@
 KARN palette banks and KarnEdit authoring exports
 
+Help > ABOUT KARN MODS opens the end-user manual with the KARN logo, author
+credit, chapter navigation and scrollable, resizing text. Its source is bundled
+as data/docs/karn-mods.md; the original logo is bundled in data/icons/karn-mods.png
+and displayed with integer nearest-neighbor magnification.
+
 Using the feature
 
 Create or open an Indexed document with transparent index 0. Select a tilemap

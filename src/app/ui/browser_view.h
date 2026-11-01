@@ -18,7 +18,7 @@ class BrowserView : public ui::Widget,
                     public TabView,
                     public WorkspaceView {
 public:
-  BrowserView();
+  explicit BrowserView(bool readingMode = false);
   ~BrowserView();
 
   void loadFile(const std::string& file, const std::string& section = std::string());

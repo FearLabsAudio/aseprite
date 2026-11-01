@@ -11,6 +11,8 @@
 
 #include "app/app.h"
 #include "app/app_menus.h"
+#include "app/fonts/font_info.h"
+#include "app/fonts/fonts.h"
 #include "app/resource_finder.h"
 #include "app/ui/browser_view.h"
 #include "app/ui/main_window.h"
@@ -77,7 +79,7 @@ class BrowserView::CMarkBox : public Widget {
 public:
   obs::signal<void()> FileChange;
 
-  CMarkBox() { initTheme(); }
+  CMarkBox(bool readingMode) : m_readingMode(readingMode) { initTheme(); }
 
   const std::string& file() { return m_file; }
 
@@ -190,6 +192,8 @@ private:
 
       maxH = std::max(maxH, sz.h);
       p.x += sz.w;
+      if (m_readingMode && dynamic_cast<Label*>(child) && !isItem && !child->isExpansive())
+        p.x += font()->textLength(" ");
     }
   }
 
@@ -253,7 +257,24 @@ private:
 
     auto theme = SkinTheme::get(this);
     setBgColor(theme->colors.textboxFace());
-    setBorder(gfx::Border(4 * guiscale()));
+    setBorder(gfx::Border((m_readingMode ? 12 : 4) * guiscale()));
+    if (m_readingMode) {
+      // Request a separate, larger font instead of resizing the shared UI font.
+      const auto& info = theme->getDefaultFontInfo();
+      const float size = theme->getDefaultFont()->size() * 1.5f;
+      // Bitmap theme fonts only support whole multiples. Use the bundled
+      // cross-platform reading-font definition for a true halfway size.
+      const auto larger = Fonts::instance()->fontFromInfo(
+        theme->getDefaultFont()->type() == text::FontType::SpriteSheet ?
+          FontInfo(FontInfo::Type::Name, "Unicode", size, info.style(),
+                   FontInfo::Flags::Antialias, info.hinting()) :
+          FontInfo(info, size, info.style(), info.flags(), info.hinting()));
+      if (larger) {
+        setFont(larger);
+        for (auto* child : children())
+          child->setFont(larger);
+      }
+    }
   }
 
   void clear()
@@ -291,7 +312,19 @@ private:
             else {
               m_content += text;
               if (inHeading) {
-                closeContent();
+                if (m_readingMode) {
+                  auto* heading = new Label(m_content);
+                  heading->setAlign(LEFT | MIDDLE);
+                  heading->setBorder(gfx::Border(6 * guiscale()));
+                  // Pair the normal label text with the theme's normal face.
+                  // Code backgrounds can be bright even in dark themes.
+                  heading->setBgColor(SkinTheme::get(this)->colors.face());
+                  heading->setExpansive(true);
+                  addContent(heading);
+                  m_content.clear();
+                }
+                else
+                  closeContent();
                 if (section == text)
                   m_sectionWidget = lastChild();
               }
@@ -341,11 +374,11 @@ private:
         case CMARK_NODE_LIST: {
           if (ev_type == CMARK_EVENT_ENTER) {
             closeContent();
-            addChild(new OpenList);
+            addContent(new OpenList);
           }
           else if (ev_type == CMARK_EVENT_EXIT) {
             closeContent();
-            addChild(new CloseList);
+            addContent(new CloseList);
           }
           break;
         }
@@ -353,7 +386,7 @@ private:
         case CMARK_NODE_ITEM: {
           if (ev_type == CMARK_EVENT_ENTER) {
             closeContent();
-            addChild(new Item(" - "));
+            addContent(new Item(" - "));
           }
           break;
         }
@@ -392,6 +425,8 @@ private:
           if (ev_type == CMARK_EVENT_EXIT) {
             closeContent();
             addBreak();
+            if (m_readingMode)
+              addBreak();
           }
           break;
         }
@@ -436,16 +471,26 @@ private:
     }
   }
 
+  void addContent(Widget* child)
+  {
+    if (m_readingMode) {
+      child->setFont(font());
+      if (dynamic_cast<Break*>(child))
+        child->setMinSize(gfx::Size(0, font()->lineHeight()));
+    }
+    addChild(child);
+  }
+
   void addSeparator()
   {
     auto sep = new SeparatorInView(std::string(), HORIZONTAL);
     float h = font()->lineHeight() / 2.0f;
     sep->setBorder(gfx::Border(0, h, 0, h));
     sep->setExpansive(true);
-    addChild(sep);
+    addContent(sep);
   }
 
-  void addBreak() { addChild(new Break); }
+  void addBreak() { addContent(new Break); }
 
   void addText(const std::string& content)
   {
@@ -463,11 +508,13 @@ private:
         }
         else
           label = new Label(word);
+        if (m_readingMode)
+          label->setBorder(gfx::Border(0, 0, 0, 2 * guiscale()));
 
         // Uncomment this line to debug labels
         // label->setBgColor(gfx::rgba((rand()%128)+128, 128, 128));
 
-        addChild(label);
+        addContent(label);
       }
   }
 
@@ -476,7 +523,7 @@ private:
     auto theme = SkinTheme::get(this);
     auto label = new Label(content);
     label->setBgColor(theme->colors.textboxCodeFace());
-    addChild(label);
+    addContent(label);
   }
 
   void addCodeBlock(const std::string& content)
@@ -488,7 +535,7 @@ private:
       textBox->setBorder(gfx::Border(4 * guiscale()));
     });
     textBox->initTheme();
-    addChild(textBox);
+    addContent(textBox);
   }
 
   void addLink(const std::string& url, const std::string& text)
@@ -512,7 +559,7 @@ private:
     // Uncomment this line to debug labels
     // label->setBgColor(gfx::rgba((rand()%128)+128, 128, 128));
 
-    addChild(label);
+    addContent(label);
   }
 
   void relayout()
@@ -529,9 +576,10 @@ private:
   std::string m_file;
   std::string m_content;
   Widget* m_sectionWidget = nullptr;
+  bool m_readingMode;
 };
 
-BrowserView::BrowserView() : m_textBox(new CMarkBox)
+BrowserView::BrowserView(bool readingMode) : m_textBox(new CMarkBox(readingMode))
 {
   addChild(&m_view);
 

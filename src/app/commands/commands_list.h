@@ -6,6 +6,7 @@
 // the End-User License Agreement for Aseprite.
 
 FOR_EACH_COMMAND(About)
+FOR_EACH_COMMAND(AboutKarnMods)
 FOR_EACH_COMMAND(AddColor)
 FOR_EACH_COMMAND(AdvancedMode)
 FOR_EACH_COMMAND(Apply)
