@@ -414,7 +414,7 @@ void BrushPreview::show(const gfx::Point& screenPos)
     }
 
     if (layer) {
-      render::Render().renderLayer(extraImage,
+      render::Render().setPaletteBanksEnabled(false).renderLayer(extraImage,
                                    layer,
                                    site.frame(),
                                    gfx::Clip(0, 0, extraCelBoundsInCanvas),

@@ -13,12 +13,38 @@
 #include "app/script/luacpp.h"
 #include "app/script/security.h"
 #include "base/fs.h"
+#include "base/string.h"
+#ifdef _WIN32
+  #include <windows.h>
+#endif
 
 namespace app { namespace script {
 
 namespace {
 
 struct AppFS {};
+
+int AppFS_upperInvariant(lua_State* L)
+{
+  const std::string text = luaL_checkstring(L, 1);
+#ifdef _WIN32
+  const std::wstring wide = base::from_utf8(text);
+  if (wide.empty()) {
+    lua_pushliteral(L, "");
+    return 1;
+  }
+  const int length = LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE,
+                                  wide.data(), int(wide.size()), nullptr, 0, nullptr, nullptr, 0);
+  std::wstring upper(length, L'\0');
+  if (!length || !LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE,
+                               wide.data(), int(wide.size()), upper.data(), length, nullptr, nullptr, 0))
+    return luaL_error(L, "Cannot normalize source path case");
+  lua_pushstring(L, base::to_utf8(upper).c_str());
+#else
+  lua_pushstring(L, base::string_to_upper(text).c_str());
+#endif
+  return 1;
+}
 
 int AppFS_pathSeparator(lua_State* L)
 {
@@ -195,6 +221,7 @@ const Property AppFS_properties[] = {
 };
 
 const luaL_Reg AppFS_methods[] = {
+  { "upperInvariant",     AppFS_upperInvariant },
   // Path manipulation
   { "filePath",           AppFS_pathElement<base::get_file_path>            },
   { "fileName",           AppFS_pathElement<base::get_file_name>            },

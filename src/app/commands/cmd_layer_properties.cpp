@@ -32,6 +32,7 @@
 #include "app/ui/timeline/timeline.h"
 #include "app/ui/user_data_view.h"
 #include "app/ui_context.h"
+#include "app/util/palette_bank.h"
 #include "base/convert_to.h"
 #include "base/scoped_value.h"
 #include "doc/layer.h"
@@ -129,6 +130,29 @@ public:
     userData()->Click.connect([this] { onToggleUserData(); });
     tileset()->Click.connect([this] { onTileset(); });
     tileset()->setVisible(false);
+    paletteBank()->addItem(Strings::layer_properties_document_palette());
+    for (int bank = 0; bank < 16; ++bank)
+      paletteBank()->addItem("Bank " + std::to_string(bank) + " (" +
+                             std::to_string(bank * 16) + "-" +
+                             std::to_string(bank * 16 + 15) + ")");
+    paletteBank()->Change.connect([this] {
+      if (m_selfUpdate || !m_layer)
+        return;
+      const int bank = paletteBank()->getSelectedItemIndex() - 1;
+      onCommitChange();
+      try {
+        ContextWriter writer(UIContext::instance());
+        Tx tx(writer, "Set Palette Bank");
+        set_layer_palette_bank(tx, m_layer, bank);
+        tx.commit();
+        app_refresh_screen();
+      }
+      catch (const std::exception& e) {
+        Console::showException(e);
+      }
+      updateFromLayer();
+    });
+    bankName()->Change.connect([this] { onStartTimer(); });
 
     m_userDataView.UserDataChange.connect([this] { onStartTimer(); });
 
@@ -255,7 +279,9 @@ private:
 
     std::string newName = nameValue();
     int newOpacity = opacityValue();
-    const doc::UserData newUserData = m_userDataView.userData();
+    doc::UserData newUserData = m_layer->userData();
+    newUserData.setText(m_userDataView.userData().text());
+    newUserData.setColor(m_userDataView.userData().color());
     doc::BlendMode newBlendMode = blendModeValue();
 
     if ((count > 1) ||
@@ -267,6 +293,13 @@ private:
       try {
         ContextWriter writer(UIContext::instance());
         Tx tx(writer, "Set Layer Properties");
+        if (m_layer->paletteBank() >= 0 &&
+            bankName()->text() != doc::palette_bank_name(m_layer->sprite(), m_layer->paletteBank())) {
+          auto data = m_layer->sprite()->userData();
+          data.properties(doc::kPaletteBankProperties)["name" + std::to_string(m_layer->paletteBank())] =
+            bankName()->text();
+          tx(new cmd::SetUserData(m_layer->sprite(), data, m_document));
+        }
 
         view::RealRange range;
         if (m_range.enabled())
@@ -290,8 +323,12 @@ private:
           if (nameChanged && newName != layer->name())
             tx(new cmd::SetLayerName(layer, newName));
 
-          if (userDataChanged && newUserData != layer->userData())
-            tx(new cmd::SetUserData(layer, newUserData, m_document));
+          if (userDataChanged && newUserData != layer->userData()) {
+            auto data = layer->userData();
+            data.setText(newUserData.text());
+            data.setColor(newUserData.color());
+            tx(new cmd::SetUserData(layer, data, m_document));
+          }
 
           if (layer->isImage() ||
               (layer->isGroup() && Preferences::instance().experimental.composeGroups())) {
@@ -440,6 +477,22 @@ private:
     base::ScopedValue switchSelf(m_selfUpdate, true);
 
     const bool tilemapVisibility = (m_layer && m_layer->isTilemap());
+    const bool bankVisible = m_layer && m_layer->isImage() && !m_layer->isReference() &&
+                             !m_layer->isBackground() && m_layer->sprite()->pixelFormat() == IMAGE_INDEXED;
+    paletteBankLabel()->setVisible(bankVisible);
+    paletteBank()->setVisible(bankVisible);
+    paletteBank()->deleteAllItems();
+    paletteBank()->addItem(Strings::layer_properties_document_palette());
+    for (int bank = 0; bank < 16; ++bank) {
+      const std::string bankTitle = m_layer ? doc::palette_bank_name(m_layer->sprite(), bank) : "";
+      paletteBank()->addItem("Bank " + std::to_string(bank) +
+                             (bankTitle.empty() ? "" : " - " + bankTitle));
+    }
+    paletteBank()->setSelectedItemIndex(bankVisible ? m_layer->paletteBank() + 1 : 0);
+    const bool namedBank = bankVisible && m_layer->paletteBank() >= 0;
+    bankNameLabel()->setVisible(namedBank);
+    bankName()->setVisible(namedBank);
+    bankName()->setText(namedBank ? doc::palette_bank_name(m_layer->sprite(), m_layer->paletteBank()) : "");
     if (m_layer) {
       name()->setText(m_layer->name().c_str());
       name()->setEnabled(true);

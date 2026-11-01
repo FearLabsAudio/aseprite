@@ -1,0 +1,10 @@
+{
+  "name": "karn-palette-banks",
+  "displayName": "KARN Palette Banks",
+  "description": "Per-layer palette banks and KarnEdit BMP/TileKit/collage authoring exports",
+  "version": "2.0",
+  "author": { "name": "FearLabsAudio" },
+  "publisher": "FearLabsAudio",
+  "categories": ["Scripts"],
+  "contributes": { "scripts": [ { "path": "export.lua" } ] }
+}

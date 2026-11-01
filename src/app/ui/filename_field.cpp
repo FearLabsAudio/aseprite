@@ -84,13 +84,13 @@ std::string FilenameField::updatedFilename() const
   return result;
 }
 
-void FilenameField::setEditFullPath(const bool on)
+void FilenameField::setEditFullPath(const bool on, const bool savePreference)
 {
   const std::string& fn = updatedFilename();
   m_editFullPath = on;
   setFilename(fn);
 
-  if (Preferences::instance().general.editFullPath() != m_editFullPath)
+  if (savePreference && Preferences::instance().general.editFullPath() != m_editFullPath)
     Preferences::instance().general.editFullPath(m_editFullPath);
 }
 

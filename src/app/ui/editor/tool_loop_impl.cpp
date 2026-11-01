@@ -53,6 +53,7 @@
 #include "doc/layer.h"
 #include "doc/mask.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
 #include "doc/palette_picks.h"
 #include "doc/remap.h"
 #include "doc/slice.h"
@@ -183,6 +184,34 @@ public:
     ASSERT(m_ink);
     ASSERT(m_controller);
 
+    if (!m_tilesMode && m_ink->isPaint() && m_layer && m_layer->isTilemap() &&
+        m_layer->paletteBank() < 0 && doc::tileset_uses_palette_banks(m_layer->tileset()))
+      throw std::runtime_error("Assign a palette bank to this layer before editing its shared 4bpp tileset.");
+
+    if (!m_tilesMode && m_layer && m_layer->paletteBank() >= 0) {
+      auto localColor = [&](const app::Color& color) -> color_t {
+        if (color.getType() == app::Color::MaskType)
+          return 0;
+        if (color.getType() == app::Color::IndexType) {
+          if (color.getIndex() < 0 || color.getIndex() > 15)
+            throw std::runtime_error("Choose a local palette index between 0 and 15.");
+          return color.getIndex();
+        }
+        return m_layer->rgbMap(m_frame)->mapColor(color.getRed(), color.getGreen(),
+                                                 color.getBlue(), color.getAlpha());
+      };
+      m_fgColor = localColor(params.fg);
+      m_bgColor = localColor(params.bg);
+      m_primaryColor = (m_button == Left ? m_fgColor : m_bgColor);
+      m_secondaryColor = (m_button == Left ? m_bgColor : m_fgColor);
+      if (m_brush->type() == kImageBrushType && m_brush->image()->pixelFormat() == IMAGE_INDEXED) {
+        for (int y = 0; y < m_brush->image()->height(); ++y)
+          for (int x = 0; x < m_brush->image()->width(); ++x)
+            if (m_brush->image()->getPixel(x, y) > 15)
+              throw std::runtime_error("Indexed brushes on palette-bank layers must use local indices 0-15.");
+      }
+    }
+
     // If the user right-clicks with a custom/image brush we change
     // the image's colors of the brush to the background color.
     //
@@ -277,6 +306,11 @@ public:
       m_shade = App::instance()->contextBar()->getShade();
       m_shadingRemap.reset(
         App::instance()->contextBar()->createShadeRemap(m_button == tools::ToolLoop::Left));
+      if (m_shadingRemap && m_layer && m_layer->paletteBank() >= 0) {
+        for (int i = 0; i < m_shadingRemap->size(); ++i)
+          if (i == 0 || (*m_shadingRemap)[i] > 15)
+            m_shadingRemap->map(i, i);
+      }
 
       // Keep the stroke's original indices as the shading input. In overlap
       // mode, each movement otherwise feeds the shaded output back into it.
@@ -321,9 +355,14 @@ public:
   bool isTilemapMode() override { return m_tilesMode; };
   bool isManualTilesetMode() const override { return m_tilesetMode == TilesetMode::Manual; }
   frame_t getFrame() override { return m_frame; }
-  Palette* getPalette() override { return m_sprite->palette(m_frame); }
+  Palette* getPalette() override
+  {
+    return m_layer ? m_layer->palette(m_frame) : m_sprite->palette(m_frame);
+  }
   RgbMap* getRgbMap() override
   {
+    if (m_layer && m_layer->paletteBank() >= 0)
+      return m_layer->rgbMap(m_frame);
     if (!m_rgbMap) {
       Sprite::RgbMapFor forLayer = (((m_layer && m_layer->isBackground()) ||
                                      (m_sprite->pixelFormat() == IMAGE_RGB)) ?

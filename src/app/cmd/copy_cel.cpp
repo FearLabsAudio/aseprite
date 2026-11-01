@@ -95,7 +95,7 @@ void CopyCel::onExecute()
       executeAndAdd(new cmd::SetCelData(dstCel, srcCel->dataRef()));
     }
     // Rasterize tilemap into the regular image background layer
-    else if (srcLayer->isTilemap()) {
+    else if (srcLayer->isTilemap() || srcLayer->paletteBank() >= 0) {
       ImageRef tmp(Image::createCopy(dstImage.get()));
       render::rasterize(tmp.get(), srcCel, 0, 0, false);
       executeAndAdd(new cmd::CopyRect(dstImage.get(), tmp.get(), gfx::Clip(tmp->bounds())));

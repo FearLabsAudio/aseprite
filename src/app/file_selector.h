@@ -20,7 +20,7 @@ class ComboBox;
 
 namespace app {
 
-enum class FileSelectorType { Open, OpenMultiple, Save };
+enum class FileSelectorType { Open, OpenMultiple, Save, Folder };
 
 bool show_file_selector(const std::string& title,
                         const std::string& initialPath,

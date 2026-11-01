@@ -55,6 +55,8 @@ class Render {
 
 public:
   Render();
+  // Disable bank expansion when rasterizing a layer into an editable buffer.
+  Render& setPaletteBanksEnabled(bool enabled) { m_applyPaletteBanks = enabled; return *this; }
 
   void setRefLayersVisiblity(const bool visible);
   void setNonactiveLayersOpacity(const int opacity);
@@ -122,7 +124,8 @@ public:
                  const gfx::RectF& celBounds,
                  const gfx::Clip& area,
                  const int opacity,
-                 const BlendMode blendMode);
+                 const BlendMode blendMode,
+                 const bool applyPaletteBank = false);
 
 private:
   void renderSpriteLayers(Image* dstImage,
@@ -202,6 +205,7 @@ private:
   OnionskinOptions m_onionskin;
   ImageBufferPtr m_tmpBuf;
   bool m_composeGroups = false;
+  bool m_applyPaletteBanks = true;
 };
 
 void composite_image(Image* dst,

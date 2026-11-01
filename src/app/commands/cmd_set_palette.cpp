@@ -15,6 +15,7 @@
 #include "app/modules/palettes.h"
 #include "app/tx.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
 #include "ui/alert.h"
 #include "ui/manager.h"
 
@@ -35,10 +36,11 @@ void SetPaletteCommand::onExecute(Context* context)
   ContextWriter writer(context);
   if (writer.document()) {
     Tx tx(writer, "Set Palette");
-    writer.document()->getApi(tx).setPalette(writer.sprite(), writer.frame(), m_palette);
+    const auto merged = doc::merge_bank_palette(writer.layer(), writer.frame(), *m_palette);
+    writer.document()->getApi(tx).setPalette(writer.sprite(), writer.frame(), &merged);
     tx.commit();
   }
-  set_current_palette(m_palette, false);
+  set_current_palette(writer.document() ? writer.palette() : m_palette, false);
 
   // Redraw the entire screen
   if (context->isUIAvailable())

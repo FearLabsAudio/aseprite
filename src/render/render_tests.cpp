@@ -18,6 +18,9 @@
 #include "doc/image.h"
 #include "doc/layer.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
+#include "doc/layer_tilemap.h"
+#include "doc/tilesets.h"
 #include "doc/primitives.h"
 
 #include <memory>
@@ -249,6 +252,55 @@ TEST(Render, BugWithMultiplesOf3ZoomFactors)
       }
     }
   }
+}
+
+TEST(Render, PaletteBankPreviewAndLocalExtraction)
+{
+  std::unique_ptr<Sprite> sprite(Sprite::MakeStdSprite(ImageSpec(ColorMode::INDEXED, 2, 2)));
+  sprite->palette(0)->resize(256);
+  sprite->palette(0)->setEntry(53, rgba(20, 40, 60, 255));
+  auto* tileset = new Tileset(sprite.get(), Grid::MakeRect(gfx::Size(2, 2)), 2);
+  auto tsi = sprite->tilesets()->add(tileset);
+  ImageRef pixels(Image::create(IMAGE_INDEXED, 2, 2));
+  pixels->clear(0);
+  pixels->putPixel(0, 0, 5);
+  tileset->set(1, pixels);
+  auto* layer = new LayerTilemap(sprite.get(), tsi);
+  layer->userData().properties(kPaletteBankProperties)["bank"] = uint8_t(3);
+  sprite->root()->addLayer(layer);
+  ImageRef map(Image::create(IMAGE_TILEMAP, 1, 1));
+  map->putPixel(0, 0, tile(1, 0));
+  auto* cel = new Cel(0, map);
+  layer->addCel(cel);
+  ImageRef dst(Image::create(IMAGE_INDEXED, 2, 2));
+  dst->clear(0);
+  Render render;
+  render.renderCel(dst.get(), cel, sprite.get(), map.get(), tileset,
+                   sprite->palette(0), cel->bounds(), gfx::Clip(dst->bounds()),
+                   255, BlendMode::NORMAL);
+  EXPECT_2X2_PIXELS(dst.get(), 5, 0, 0, 0);
+  render.renderSprite(dst.get(), sprite.get(), 0);
+  EXPECT_2X2_PIXELS(dst.get(), 53, 0, 0, 0);
+  render.setPaletteBanksEnabled(false).renderLayer(dst.get(), layer, 0);
+  EXPECT_2X2_PIXELS(dst.get(), 5, 0, 0, 0);
+  render.setPaletteBanksEnabled(true);
+
+  ImageRef preview(Image::createCopy(pixels.get()));
+  preview->putPixel(1, 0, 5);
+  render.setPreviewImage(layer, 0, preview.get(), nullptr, gfx::Point(0, 0), BlendMode::NORMAL);
+  render.renderSprite(dst.get(), sprite.get(), 0);
+  EXPECT_2X2_PIXELS(dst.get(), 53, 53, 0, 0);
+  render.removePreviewImage();
+
+  // Brush preview extra cels have no layer pointer of their own.
+  Cel extra(0, preview);
+  render.setExtraImage(ExtraType::PATCH, &extra, preview.get(), BlendMode::NORMAL, layer, 0);
+  ImageRef rgb(Image::create(IMAGE_RGB, 2, 2));
+  render.renderSprite(rgb.get(), sprite.get(), 0);
+  EXPECT_EQ(rgba(20, 40, 60, 255), rgb->getPixel(1, 0));
+  EXPECT_EQ(5, pixels->getPixel(0, 0));
+  EXPECT_EQ(16, layer->palette(0)->size());
+  EXPECT_EQ(0, layer->palette(0)->getEntry(0));
 }
 
 int main(int argc, char** argv)

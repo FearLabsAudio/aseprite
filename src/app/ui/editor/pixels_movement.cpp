@@ -1223,6 +1223,7 @@ void PixelsMovement::drawImage(const Transformation& transformation,
 
     if (renderOriginalLayer) {
       render::Render render;
+      render.setPaletteBanksEnabled(false);
       render.renderLayer(dst,
                          m_site.layer(),
                          m_site.frame(),

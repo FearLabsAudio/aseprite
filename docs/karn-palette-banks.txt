@@ -1,0 +1,241 @@
+KARN palette banks and KarnEdit authoring exports
+
+Using the feature
+
+Create or open an Indexed document with transparent index 0. Select a tilemap
+or ordinary image layer and open Layer > Properties. Palette Bank defaults to Document Palette,
+which retains Aseprite's original behavior. Select Bank 0 through Bank 15 to
+enable local 4bpp indices for that layer. Bank Name is an optional name shared
+by all layers using that bank.
+
+The PB button to the right of Manual / Auto / Stack opens Palette Banks. Its
+Layers tab lists image layers, tilemaps and groups, with editable names and bank
+assignments, one layer per row. Its Banks tab shows one row per bank: index,
+editable name, then color swatches. Names and assignments update immediately
+and remain undoable; close the window with its title-bar close button. The PB button remains available
+when an ordinary indexed layer is selected. Groups/reference layers have no
+bank; convert background layers into ordinary layers before assigning a bank.
+
+Palette Banks, BMP export, and collage export each remember their own window
+size and position across sessions. The shared BMP step uses the same bounds
+as standalone BMP export. Restored bounds are kept inside the available app
+window; smaller windows scroll when their contents do not fit. Resetting
+filenames or TileKit paths does not resize the window. Filename fields receive
+the extra horizontal space; collage BMP labels show the source filename, with
+the source folder and full mappings available through BMP exports.
+
+The color bar shows 16 local slots when a banked layer is selected. Slot zero
+is always transparent. Painting and shading use slots 0–15. The eyedropper
+samples the active banked layer's local slots. Indexed image brushes must also
+use local slots. Multiple banked layers can share the same tileset and display
+it using different banks. Editing shared tiles affects every layer using them.
+
+Colors are stored in the ordinary document palette. Local slot i (1–15) in
+bank b uses master palette entry 16*b+i. Slot zero stays transparent; reserved
+entries 16, 32, etc. are not painted by banked layers. Selecting an ordinary
+layer shows the master palette. Loading a palette while a banked layer is
+active imports its slots 1–15 into that bank only. If a standalone document
+has at most 16 colors, assigning a previously unavailable bank allocates it
+and copies those colors into it. Existing indices never change on assignment.
+
+Assignments require existing tile pixels to be in 0–15. The application does
+not silently mask high indices, quantize indexed artwork, or guess which bank
+an existing 256-color tileset belongs to. Assign a bank to every layer through
+which you want to paint a shared 4bpp tileset.
+
+In Indexed mode, the 4-bit checkbox beside the palette Options button enables
+"Force 4 bit color channels" for this document. Enabling it snaps every RGB
+channel in every animation palette (all banks) to the nearest multiple of 17,
+matching KarnEdit's VERA RGB444 conversion. Later palette edits and loads stay
+on that grid. Alpha, palette size, indices, and pixels are preserved, including
+duplicate colors. Disabling it keeps the current colors and permits free edits.
+Undo/redo covers the setting and its initial conversion together. The setting
+defaults to off and is saved in karn.palette-rgb444.v1 user-data properties in
+the .aseprite file. It is inactive outside Indexed mode and resumes on returning
+to Indexed. Scripts can toggle with app.command.Force4BitColorChannels() or set
+an explicit state with app.command.Force4BitColorChannels{enabled=true/false}.
+
+Save/load and compatibility
+
+Save the editable source as .aseprite. Layer bank assignments and document bank
+names are stored in user-data properties under karn.palette-banks.v1, alongside
+the unchanged local tile pixels and master palette. Undo/redo covers bank
+assignment and palette edits. No per-tile-placement override exists yet.
+
+Stock Aseprite ignores this custom metadata and displays banked local pixels
+using the first palette bank. Export a PNG/sprite sheet for ordinary viewers.
+Converting between tilemap and ordinary layers now preserves the bank and local
+indices. Export a composed image for conversion to another color mode. Global
+RGB-based palette remapping is disabled while banked layers exist.
+
+Exports
+
+PNG and sprite-sheet exports compose all visible layers using the assigned
+banks. Indexed output contains exact global indices, including distinct slots
+that happen to have identical RGB values. Export Tileset applies the selected
+layer's bank; exports including a shared tileset under different banks include
+each bank's appearance separately. Export does not change source tile data.
+
+File > Export > KARN contains two authoring exports. Both use the current frame
+and accept ordinary indexed image layers as well as tilemap layers. Assign a
+bank to each exported layer; reference layers are excluded.
+
+Export layers as 4bpp BMPs
+
+Choose an output folder and check the layers to export. Visible banked layers
+are selected initially; All, Visible and None provide quick selection controls.
+Hidden layers can also be selected explicitly. Review/edit each output filename.
+Change the base name and click Reset filenames to generate fresh names using
+the bank's custom name, such as Forest_Terrain.bmp. Unnamed banks fall back to
+bank03, etc. Filename-unsafe characters are replaced, and duplicate names get
+numeric suffixes. Separate layers sharing a bank also get their layer name.
+Remembered destinations remain in use until reset or edited. Export and Palette
+Banks windows open wider and keep their size while fields or filenames change;
+they can still be resized manually.
+
+Enable Merge selected layers with the same palette bank to produce one BMP
+per selected bank. Selected layers composite in canvas order, pixel by pixel:
+index 0 reveals lower selected layers in that bank. Indices are never remapped,
+even when two palette slots have identical RGB values. Different banks remain
+separate files. Merging requires Normal blending, full layer/group/cel opacity
+and zero cel Z-index. Collage export chooses a single bank for each whole tile.
+
+Export / Update writes the displayed filenames; Export New requires unused
+filenames. The folder, selection, merge setting and filenames are remembered
+after successful export; save the .aseprite to retain them after closing.
+Separate-layer and merged-bank filenames are remembered independently.
+
+Each BMP contains the arranged layer, not a packed tileset. The origin remains
+at canvas (0,0), dimensions are padded upward to multiples of 8, and pixels
+outside the canvas are clipped. No automatic trimming or tile deduplication
+takes place. Files always contain 16 palette entries, uncompressed BI_RGB 4bpp
+pixels, and exact local indices 0-15. Palette RGB bytes are also preserved.
+For separate-layer exports, opacity and blend effects are not baked in.
+
+Export to KarnEdit collage
+
+BMPs and collages now share the same BMP export setup. Collage export checks
+the current frame's expected BMP contents against the saved files. If required
+BMPs are missing, changed, or outdated, it first opens Export layers as 4bpp
+BMPs. Otherwise it skips that window, including when you manually exported the
+BMPs beforehand. Pixel/palette changes, missing visible layers, and changes to
+visibility or bank assignments are accounted for. Equivalent unchanged output
+does not need rewriting; timestamps alone do not determine freshness.
+
+For a collage, the BMP step selects all visible layers. When visible layers
+share a bank it enables and requires merging by bank, so one source BMP can
+hold the combined pixels. A previous separate-layer BMP export needs this
+one-time setup change before those layers can be used together in a collage.
+Hidden layers cannot contribute pixels to a visible collage bank.
+
+The second window chooses the destination collage JSON, Game Workspace folder,
+and TileKit folder, then lists one editable TileKit path per source BMP. BMP
+paths are shown for reference; BMP exports... reopens their shared setup. Reset
+TileKit paths places the JSON files in the selected TileKit folder. BMPs and
+TileKits normally live in different folders. The workspace must contain
+src/constants.p8; both folders must be inside it, and the collage JSON must be
+inside the TileKit folder. Existing TileKit ImagePath values are updated to
+the shared BMP destinations, using workspace-relative paths.
+
+Each distinct source BMP gets one 8x8 bitmap TileKit; merged layers share that
+TileKit. The collage is a native KarnEdit TileKit with source IDs and 8x8
+coordinates, not embedded pixels. The second step writes only JSON, never
+rewrites current BMPs, and rejects source BMP changes during export.
+Hidden groups hide all descendants. At each 8x8 canvas cell, the topmost layer
+with any nonzero pixel chooses the bank for the ENTIRE cell. Lower visible
+layers sharing that bank composite pixel by pixel beneath it, even if a layer
+using another bank sits between them. Other banks never fill transparent holes.
+Completely empty upper cells do not choose the bank or replace lower cells.
+Each cell references the winning bank's source TileKit. Bank-merged BMPs contain
+same-bank pixel composites; each original layer's occupied cells still decide
+which bank wins, so merging cannot let an empty upper tile steal a lower tile's
+bank. Tile flips are baked in. TileKit IDs and source coordinates remain stable
+on updates, and source artwork is unchanged.
+
+Collages use the smallest supported square size (16, 32 or 64 cells), padding
+without moving the source origin. More than 512x512 pixels is rejected. Collage
+sources require Normal blending, full layer/group/cel opacity and zero cel
+Z-index so that layer order has an unambiguous meaning. Aseprite bank numbers
+select source palettes; KarnEdit retains control over game palette allocation.
+
+KarnEdit reserves indices 1 and 2. Export preserves them exactly and warns that
+KarnEdit imports them as transparent. They still count as nonempty when choosing
+the upper tile. Non-RGB444 colors also produce a warning: the BMP preserves the
+colors, while KarnEdit rounds them on import.
+
+Updating and remembering destinations
+
+Update Existing replaces the displayed outputs. Existing TileKit/collage IDs,
+brushes and other unrelated JSON fields are preserved. Export As New proposes
+fresh JSON paths and requires unused JSON filenames, producing fresh resource
+IDs while reusing current BMPs. Use BMP exports... to choose new BMP paths too.
+Each source BMP has a distinct TileKit. SourceFileId follows KarnEdit's deterministic
+workspace-relative BMP identity contract. No game output, map snapshots, or
+global source database is written by Aseprite.
+
+All outputs are validated and staged before installation. Failed installation
+restores the previous outputs; a failed restoration reports retained backup
+paths. An externally changed file causes export to stop rather than overwrite
+the newer contents. No obsolete BMPs or TileKits are automatically deleted.
+
+Successful exports remember separate BMP and collage profiles in document/layer
+properties under karn.exports.v1 and enable native layer UUID persistence. Save
+the .aseprite normally to retain those mappings after closing. Renaming/reordering
+layers retains mappings; a duplicated layer gets a new identity. Save / Save As
+does not trigger export. Save As carries the mappings, so use Export As New when
+the new document should target different game resources. KarnEdit uses its normal
+focus/manual source refresh to pick up changes; unsaved editor work is not saved
+by this exporter.
+
+Scripting
+
+  layer.paletteBank = 3   -- undoable assignment
+  layer.paletteBank = -1  -- ordinary Document Palette interpretation
+
+Palette-bank names are sprite.properties('karn.palette-banks.v1').name0 through
+name15. Pixel APIs continue exposing raw local values. Low-level scripts can
+write arbitrary pixels directly; KarnEdit export validates them before writing.
+
+For batch export, dofile(data/extensions/karn-palette-banks/export.lua) returns E.
+Use E.prepare(sprite, {mode='bmp', frame=1, output='absolute/base.bmp'}) followed
+by E.write(plan). Collage mode also requires workspace and tilekits paths and a
+.json output. Optional rows={ {layer=layer, bmp=path, kit=path}, ... } supplies
+explicit mappings. E.remember(plan) stores successful mappings in the document.
+BMP mode accepts mergeByBank=true and optional bankOutputs={['3']='path.bmp'}.
+Rows marked selected=false are excluded before validation and composition.
+E.bmpFromSettings(sprite,frame,settings) prepares the shared BMP configuration;
+E.write and E.remember save its files and settings. E.collageBmps(sprite,frame)
+returns a current, compatible BMP plan or nil plus a reason to rerun BMP setup.
+Pass that plan as bmpPlan in collage options to reuse BMPs and write only JSON.
+E.collageGroups / E.collageRows supply one TileKit mapping per shared source.
+Legacy batch collage calls without bmpPlan still bake same-bank pixels into
+each layer's occupied cells and write their own source BMPs.
+Layer:renderLocal(frame) returns a canvas-aligned indexed image without applying
+its bank offset. Normal PNG/sheet CLI export continues to compose global indices.
+
+Regression coverage
+
+force_4_bit_color_channels.lua covers RGB444 rounding across all banks,
+unchanged alpha and ordinary/tilemap pixels, subsequent color edits and loads,
+undo/redo, no-op enabling, setting persistence, and color-mode transitions.
+
+tests/scripts/palette_banks.lua tests local painting, duplicate RGB indices,
+shared tilesets, undo/redo, save/reopen, indexed and RGB composition, PNG/sheet/
+tileset exports, palette loading, and bank-preserving layer conversion.
+render_tests covers editable extraction and brush/painting previews.
+shading_tests covers Once Per Stroke and Progressive Shading, in both directions,
+including automatic soft edges on banked ordinary and tilemap layers.
+karnedit_exports.lua covers BMPs, collage overlap, warnings, stable resource IDs,
+save/load mappings, hidden groups, flips, padding, duplicate bank filenames,
+external modifications, and rollback after an injected installation failure.
+karn_bmp_merge.lua covers layer selection, exact pixel compositing, separate
+banks, transparent holes, invalid inputs and remembered BMP export settings.
+karn_collage_merge.lua covers same-bank pixel compositing within the winning
+tile bank, intervening different-bank layers, hidden layers, empty cells,
+padding, stable IDs and removal of previously baked pixels on update.
+karn_shared_exports.lua covers manual-BMP reuse, source freshness, separate
+folders, missing sources, external edits, persisted settings, shared TileKits,
+update/new JSON behavior and rejection of source changes after planning.
+tests/karnedit/KarnEditContract.csproj verifies the isolated fixtures using the
+actual KarnEdit BMP reader, TileKit store, deterministic IDs and collage resolver,
+including merged pixels and each cell's winning palette.

@@ -480,6 +480,7 @@ target_sources(app-lib PRIVATE
   commands/cmd_set_ink_type.cpp
   commands/cmd_set_loop_section.cpp
   commands/cmd_set_palette.cpp
+  commands/cmd_force_4_bit_color_channels.cpp
   commands/cmd_set_palette_entry_size.cpp
   commands/cmd_set_same_ink.cpp
   commands/cmd_show.cpp

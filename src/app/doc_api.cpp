@@ -57,6 +57,7 @@
 #include "doc/layer_tilemap.h"
 #include "doc/mask.h"
 #include "doc/palette.h"
+#include "doc/palette_rgb444.h"
 #include "doc/slice.h"
 #include "doc/tag.h"
 #include "doc/tags.h"
@@ -832,6 +833,10 @@ void DocApi::setMaskPosition(int x, int y)
 
 void DocApi::setPalette(Sprite* sprite, frame_t frame, const Palette* newPalette)
 {
+  Palette constrained(*newPalette);
+  if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+    doc::snap_rgb444(constrained);
+  newPalette = &constrained;
   Palette* currentSpritePalette = sprite->palette(frame); // Sprite current pal
   int from, to;
 

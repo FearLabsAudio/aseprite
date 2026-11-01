@@ -133,6 +133,9 @@ public:
   void onAfterLayerChanged(Editor* editor) override
   {
     m_previewDelegate->onPreviewOtherEditor(this);
+    if (isActive())
+      set_current_palette(editor->layer() ? editor->layer()->palette(editor->frame()) :
+                                           editor->sprite()->palette(editor->frame()), false);
   }
 
   // EditorCustomizationDelegate implementation

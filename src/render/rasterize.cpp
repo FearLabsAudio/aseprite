@@ -34,7 +34,7 @@ void rasterize(doc::Image* dst, const doc::Cel* cel, const int x, const int y, c
   int opacity;
   opacity = MUL_UN8(cel->opacity(), cel->layer()->opacity(), t);
 
-  if (cel->image()->pixelFormat() == IMAGE_TILEMAP) {
+  if (cel->image()->pixelFormat() == IMAGE_TILEMAP || (!clear && cel->layer()->paletteBank() >= 0)) {
     render::Render render;
     render.renderCel(dst,
                      cel,
@@ -45,7 +45,8 @@ void rasterize(doc::Image* dst, const doc::Cel* cel, const int x, const int y, c
                      gfx::RectF(cel->bounds()),
                      gfx::Clip(x, y, 0, 0, dst->width(), dst->height()),
                      clear ? 255 : opacity,
-                     clear ? BlendMode::NORMAL : cel->layer()->blendMode());
+                     clear ? BlendMode::NORMAL : cel->layer()->blendMode(),
+                     !clear); // Compositing onto a regular layer needs global indices.
   }
   else {
     if (clear)

@@ -23,6 +23,7 @@
 #include "doc/document.h"
 #include "doc/layer.h"
 #include "doc/palette.h"
+#include "doc/palette_rgb444.h"
 #include "doc/rgbmap.h"
 #include "doc/sprite.h"
 #include "doc/tilesets.h"
@@ -81,6 +82,9 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
 {
   if (sprite->pixelFormat() == newFormat)
     return;
+  for (const auto* layer : sprite->allLayers())
+    if (layer->paletteBank() >= 0)
+      throw std::runtime_error("Export a composed image before changing color mode, or remove palette bank assignments first.");
 
   // Calculate the number of images to convert just to show a proper
   // progress bar.
@@ -145,6 +149,15 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
   // is always 0.
   int newMaskIndex = 0;
   if (newFormat == IMAGE_INDEXED) {
+    // Restore the document constraint when returning from RGB/grayscale.
+    if (doc::force_rgb444(sprite)) {
+      for (const auto* original : sprite->getPalettes()) {
+        Palette palette(*original);
+        doc::snap_rgb444(palette);
+        if (palette.countDiff(original, nullptr, nullptr))
+          m_post.add(new cmd::SetPalette(sprite, original->frame(), &palette));
+      }
+    }
     // Set all cels opacity to 100% if we are converting to indexed.
     // TODO remove this (?)
     for (Cel* cel : sprite->uniqueCels()) {
@@ -186,7 +199,7 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
 
     std::unique_ptr<Palette> graypal(Palette::createGrayscale());
     if (*graypal != *sprite->palette(0))
-      m_pre.add(new cmd::SetPalette(sprite, 0, graypal.get()));
+      m_pre.add(new cmd::SetPalette(sprite, 0, graypal.get(), false));
   }
 }
 

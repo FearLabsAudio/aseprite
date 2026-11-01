@@ -12,6 +12,8 @@
 #include "render/render.h"
 
 #include "base/gcd.h"
+#include "base/scoped_value.h"
+#include "doc/palette_bank.h"
 #include "doc/blend_internals.h"
 #include "doc/blend_mode.h"
 #include "doc/doc.h"
@@ -1190,9 +1192,13 @@ void Render::renderCel(Image* dst_image,
                        const gfx::RectF& celBounds,
                        const gfx::Clip& area,
                        const int opacity,
-                       const BlendMode blendMode)
+                       const BlendMode blendMode,
+                       const bool applyPaletteBank)
 {
   m_sprite = sprite;
+  // Indexed callers of this low-level API extract editable local pixels.
+  // Canvas composition/export use renderSprite/renderLayer instead.
+  base::ScopedValue bankScope(m_applyPaletteBanks, applyPaletteBank);
 
   CompositeImageFunc compositeImage =
     getImageComposition(dst_image->pixelFormat(), sprite->pixelFormat(), nullptr);
@@ -1238,6 +1244,12 @@ void Render::renderCel(Image* dst_image,
     area.dst.y,
     area.size.w,
     area.size.h);
+
+  const Layer* bankLayer = (cel && cel->layer() ? cel->layer() : m_currentLayer);
+  const int bank = bankLayer ? bankLayer->paletteBank() : -1;
+  const bool expandBank = bank >= 0 &&
+                         (m_applyPaletteBanks || dst_image->pixelFormat() == IMAGE_RGB);
+  std::map<tile_index, ImageRef> bankTiles;
 
   if (cel_image->pixelFormat() == IMAGE_TILEMAP) {
     ASSERT(tileset);
@@ -1301,9 +1313,16 @@ void Render::renderCel(Image* dst_image,
             put_pixel(dst_image, u - area.dst.x, v - area.dst.y, t);
           }
           else {
-            const ImageRef tile_image = tileset->get(i);
+            ImageRef tile_image = tileset->get(i);
             if (!tile_image)
               continue;
+
+            if (expandBank && tile_image->pixelFormat() == IMAGE_INDEXED) {
+              auto& expanded = bankTiles[i];
+              if (!expanded)
+                expanded = expand_bank_image(tile_image.get(), bank);
+              tile_image = expanded;
+            }
 
             renderImage(dst_image,
                         tile_image.get(),
@@ -1320,6 +1339,11 @@ void Render::renderCel(Image* dst_image,
     }
   }
   else {
+    ImageRef expanded;
+    if (expandBank && cel_image->pixelFormat() == IMAGE_INDEXED) {
+      expanded = expand_bank_image(cel_image, bank);
+      cel_image = expanded.get();
+    }
     renderImage(dst_image, cel_image, pal, celBounds, area, compositeImage, opacity, blendMode);
   }
 }

@@ -8,6 +8,8 @@
   #include "config.h"
 #endif
 
+#include "doc/palette_bank.h"
+
 #include "app/cmd/add_cel.h"
 #include "app/cmd/add_layer.h"
 #include "app/cmd/add_tileset.h"
@@ -97,6 +99,7 @@ bool ConvertLayerCommand::onEnabled(Context* ctx)
   switch (params().to()) {
     case ConvertLayerParam::Background:
       return
+        ctx->activeSite().layer()->paletteBank() < 0 &&
         // Doesn't have a background layer
         !ctx->checkFlags(ContextFlags::HasBackgroundLayer) &&
         // Convert a regular layer or tilemap into background

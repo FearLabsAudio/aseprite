@@ -52,6 +52,9 @@ void PaletteSizeCommand::onLoadParams(const Params& params)
 
 bool PaletteSizeCommand::onEnabled(Context* context)
 {
+  const auto site = context->activeSite();
+  if (site.layer() && site.layer()->paletteBank() >= 0)
+    return false;
   return context->checkFlags(ContextFlags::ActiveDocumentIsWritable);
 }
 

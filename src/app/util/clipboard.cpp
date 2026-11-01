@@ -264,7 +264,7 @@ bool Clipboard::copyFromDocument(const Site& site, bool merged)
   ASSERT(site.document());
   const Doc* doc = static_cast<const Doc*>(site.document());
   const Mask* mask = doc->mask();
-  const Palette* pal = doc->sprite()->palette(site.frame());
+  const Palette* pal = merged ? doc->sprite()->palette(site.frame()) : site.palette();
 
   if (!merged && site.layer() && site.layer()->isTilemap() &&
       site.tilemapMode() == TilemapMode::Tiles) {
@@ -495,7 +495,16 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
 
       ASSERT(m_data->image);
 
-      Palette* dst_palette = dstSpr->palette(site.frame());
+      Palette* dst_palette = site.palette();
+      bool localIndices = (site.layer() && site.layer()->paletteBank() >= 0 &&
+                           m_data->image->pixelFormat() == IMAGE_INDEXED &&
+                           m_data->palette && m_data->palette->size() == 16);
+      if (localIndices) {
+        for (int y = 0; y < m_data->image->height(); ++y)
+          for (int x = 0; x < m_data->image->width(); ++x)
+            if (m_data->image->getPixel(x, y) > 15)
+              localIndices = false;
+      }
 
       // Source image (clipboard or a converted copy to the destination 'imgtype')
       ImageRef src_image;
@@ -504,11 +513,11 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
          // Indexed images can be copied directly only if both images
          // have the same palette.
          (m_data->image->pixelFormat() != IMAGE_INDEXED ||
-          m_data->palette->countDiff(dst_palette, NULL, NULL) == 0))) {
+          localIndices || m_data->palette->countDiff(dst_palette, NULL, NULL) == 0))) {
         src_image = m_data->image;
       }
       else {
-        RgbMap* dst_rgbmap = dstSpr->rgbMap(site.frame());
+        RgbMap* dst_rgbmap = site.rgbMap();
 
         src_image.reset(render::convert_pixel_format(m_data->image.get(),
                                                      NULL,

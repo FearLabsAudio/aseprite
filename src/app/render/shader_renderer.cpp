@@ -8,11 +8,14 @@
   #include "config.h"
 #endif
 
+#include "doc/palette_bank.h"
+
 #include "app/render/shader_renderer.h"
 
 #if SK_ENABLE_SKSL && ENABLE_DEVMODE // TODO remove ENABLE_DEVMODE when the ShaderRenderer is ready
 
   #include "app/color_utils.h"
+  #include "base/scoped_value.h"
   #include "app/util/shader_helpers.h"
   #include "doc/render_plan.h"
   #include "os/common/generic_surface.h"
@@ -230,6 +233,12 @@ void ShaderRenderer::renderPlan(SkCanvas* canvas,
   for (const auto& item : plan.items()) {
     const Cel* cel = item.cel;
     const Layer* layer = item.layer;
+    Palette layerPalette(m_palette);
+    if (layer->paletteBank() >= 0) {
+      layerPalette = make_bank_palette(*sprite->palette(frame), layer->paletteBank());
+      layerPalette.resize(256, 0);
+    }
+    base::ScopedValue paletteScope(m_palette, layerPalette);
 
     switch (layer->type()) {
       case doc::ObjectType::LayerImage: {

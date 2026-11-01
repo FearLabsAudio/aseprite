@@ -35,7 +35,7 @@ bool show_file_selector(const std::string& title,
   const os::SystemRef system = os::System::instance();
   const std::string defExtension = Preferences::instance().saveFile.defaultExtension();
 
-  if (Preferences::instance().experimental.useNativeFileDialog()) {
+  if (type == FileSelectorType::Folder || Preferences::instance().experimental.useNativeFileDialog()) {
     dlgs::FileDialog::Spec spec;
 
 #if LAF_MACOS
@@ -57,7 +57,7 @@ bool show_file_selector(const std::string& title,
       // Must be set before setFileName() as the Linux impl might
       // require the default extension to fix the initial file name
       // with the default extension.
-      if (!defExtension.empty()) {
+      if (type != FileSelectorType::Folder && !defExtension.empty()) {
         dlg->setDefaultExtension(defExtension);
       }
 
@@ -75,6 +75,7 @@ bool show_file_selector(const std::string& title,
         case FileSelectorType::Open:         nativeType = dlgs::FileDialog::Type::OpenFile; break;
         case FileSelectorType::OpenMultiple: nativeType = dlgs::FileDialog::Type::OpenFiles; break;
         case FileSelectorType::Save:         nativeType = dlgs::FileDialog::Type::SaveFile; break;
+        case FileSelectorType::Folder:       nativeType = dlgs::FileDialog::Type::OpenFolder; break;
       }
       dlg->setType(nativeType);
 
@@ -96,7 +97,7 @@ bool show_file_selector(const std::string& title,
 
             // Use the default extension if there is no extension
             // TODO I think this should be in laf too
-            if (base::get_file_extension(fn).empty())
+            if (type != FileSelectorType::Folder && base::get_file_extension(fn).empty())
               fn = base::replace_extension(fn, defExtension);
 
             output.push_back(fn);
@@ -120,6 +121,11 @@ bool show_file_selector(const std::string& title,
       }
     }
   }
+
+  // The internal file picker selects files only. Folder fields still allow
+  // typing a path if the native directory picker is unavailable.
+  if (type == FileSelectorType::Folder)
+    return false;
 
   FileSelector fileSelector(type);
 

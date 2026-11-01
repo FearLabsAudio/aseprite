@@ -14,17 +14,30 @@
 #include "app/doc.h"
 #include "base/serialization.h"
 #include "doc/palette.h"
+#include "doc/palette_rgb444.h"
+#include "doc/layer.h"
+#include <stdexcept>
 #include "doc/sprite.h"
 
 namespace app { namespace cmd {
 
 using namespace doc;
 
-SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette)
+SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
+                       bool constrainChannels)
   : WithSprite(sprite)
   , m_frame(frame)
 {
+  Palette constrained(*newPalette);
+  const bool constrain = constrainChannels && sprite->pixelFormat() == IMAGE_INDEXED &&
+                         doc::force_rgb444(sprite);
+  if (constrain)
+    doc::snap_rgb444(constrained);
+  newPalette = &constrained;
   const Palette* curPalette = sprite->palette(frame);
+  for (const auto* layer : sprite->allLayers())
+    if (layer->paletteBank() >= 0 && newPalette->size() < (layer->paletteBank() + 1) * 16)
+      throw std::runtime_error("The document palette must include every assigned 16-color bank.");
 
   m_oldNColors = curPalette->size();
   m_newNColors = newPalette->size();
@@ -33,7 +46,7 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette)
   m_from = m_to = -1;
   int diffs = curPalette->countDiff(newPalette, &m_from, &m_to);
   (void)diffs;
-  ASSERT(diffs > 0);
+  ASSERT(diffs > 0 || constrain);
 
   if (m_from >= 0 && m_to >= m_from) {
     int oldColors = std::min(m_to + 1, m_oldNColors) - m_from;

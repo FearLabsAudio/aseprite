@@ -44,6 +44,7 @@ public:
     m_button.setEnabled(!readOnly);
   }
   bool isReadOnly() const { return m_entry->isReadOnly(); }
+  void setEditFullPath(const bool on, const bool savePreference = true);
   void onUpdateText();
 
   obs::signal<std::string()> SelectOutputFile;
@@ -60,7 +61,6 @@ private:
     FilenameButton(const std::string& text);
   };
 
-  void setEditFullPath(const bool on);
   void updateWidgets();
   void onBrowse();
   std::string updatedFilename() const;

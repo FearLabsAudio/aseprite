@@ -20,6 +20,7 @@
 #include "doc/with_user_data.h"
 
 #include <string>
+#include <memory>
 
 namespace doc {
 
@@ -31,6 +32,8 @@ class LayerGroup;
 class LayerImage;
 class Sprite;
 class Tileset;
+class Palette;
+class RgbMap;
 
 //////////////////////////////////////////////////////////////////////
 // Layer class
@@ -76,6 +79,10 @@ public:
   void setName(const std::string& name) { m_name = name; }
 
   Sprite* sprite() const { return m_sprite; }
+  // -1: document indices; 0..15: local 4bpp indices, zero transparent.
+  int paletteBank() const;
+  Palette* palette(frame_t frame) const;
+  RgbMap* rgbMap(frame_t frame) const;
   Layer* parent() const { return m_parent; }
   void setParent(Layer* parent) { m_parent = parent; }
 
@@ -212,6 +219,8 @@ private:
   Layer* m_parent;           // parent layer
   LayerFlags m_flags;        // stack order cannot be changed
   mutable base::Uuid m_uuid; // lazily generated layer's UUID
+  mutable std::unique_ptr<Palette> m_bankPalette;
+  mutable std::unique_ptr<RgbMap> m_bankRgbMap;
 
   // Some of these fields might not be used depending on the layer
   // kind (e.g. the blend mode and opacity don't make sense for audio

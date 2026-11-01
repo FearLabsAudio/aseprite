@@ -226,8 +226,10 @@ private:
   ui::HBox m_tilesHBox;
   ButtonSet m_editPal;
   ButtonSet m_buttons;
+  ui::CheckBox m_force4BitButton;
   ButtonSet m_tilesButton;
   ButtonSet m_tilesetModeButtons;
+  ui::Button m_paletteBanksButton;
   std::unique_ptr<PalettePopup> m_palettePopup;
   ui::Splitter m_splitter;
   ui::VBox m_palettePlaceholder;

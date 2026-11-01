@@ -13,6 +13,8 @@
 #include "app/doc.h"
 #include "app/doc_event.h"
 #include "doc/sprite.h"
+#include "doc/layer.h"
+#include <stdexcept>
 
 namespace app { namespace cmd {
 
@@ -21,6 +23,10 @@ SetTransparentColor::SetTransparentColor(Sprite* sprite, color_t newMask)
   , m_oldMaskColor(sprite->transparentColor())
   , m_newMaskColor(newMask)
 {
+  if (newMask != 0)
+    for (const auto* layer : sprite->allLayers())
+      if (layer->paletteBank() >= 0)
+        throw std::runtime_error("Palette-bank documents require transparent index 0.");
 }
 
 void SetTransparentColor::onExecute()

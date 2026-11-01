@@ -32,6 +32,7 @@
 #include "doc/images_map.h"
 #include "doc/layer.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
 #include "doc/primitives.h"
 #include "doc/selected_frames.h"
 #include "doc/selected_layers.h"
@@ -973,18 +974,20 @@ int DocExporter::addTilesetsSamples(Doc* doc, const doc::SelectedLayers* selLaye
   else
     layers = doc->sprite()->allVisibleLayers();
 
-  std::set<doc::ObjectId> alreadyExported;
+  std::set<std::pair<doc::ObjectId, int>> alreadyExported;
   int items = 0;
   for (auto& layer : layers) {
     if (layer->isTilemap()) {
       Tileset* ts = dynamic_cast<LayerTilemap*>(layer)->tileset();
+      const auto key = std::make_pair(ts->id(), layer->paletteBank());
 
-      if (alreadyExported.find(ts->id()) == alreadyExported.end()) {
+      if (alreadyExported.find(key) == alreadyExported.end()) {
         for (const auto& tile : *ts) {
-          addImage(doc, tile.image);
+          addImage(doc, layer->paletteBank() >= 0 && tile.image ?
+                          expand_bank_image(tile.image.get(), layer->paletteBank()) : tile.image);
           ++items;
         }
-        alreadyExported.insert(ts->id());
+        alreadyExported.insert(key);
       }
     }
   }

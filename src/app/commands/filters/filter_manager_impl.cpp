@@ -35,6 +35,7 @@
 #include "doc/layer.h"
 #include "doc/mask.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
 #include "doc/sprite.h"
 #include "filters/filter.h"
 #include "ui/manager.h"
@@ -295,7 +296,7 @@ void FilterManagerImpl::applyToTarget()
 
   // Palette change
   if (paletteChange) {
-    Palette newPalette = *getNewPalette();
+    Palette newPalette = doc::merge_bank_palette(m_site.layer(), m_site.frame(), *getNewPalette());
     restoreSpritePalette();
     (*m_tx)(new cmd::SetPalette(m_site.sprite(), m_site.frame(), &newPalette));
   }
@@ -424,18 +425,23 @@ const Palette* FilterManagerImpl::getPalette() const
   if (m_oldPalette)
     return m_oldPalette.get();
   else
-    return m_site.sprite()->palette(m_site.frame());
+    return m_cel ? m_cel->layer()->palette(m_site.frame()) : m_site.palette();
 }
 
 const RgbMap* FilterManagerImpl::getRgbMap() const
 {
-  return m_site.sprite()->rgbMap(m_site.frame());
+  return m_cel ? m_cel->layer()->rgbMap(m_site.frame()) : m_site.rgbMap();
 }
 
 Palette* FilterManagerImpl::getNewPalette()
 {
   if (!m_oldPalette)
     m_oldPalette.reset(new Palette(*getPalette()));
+  if (m_site.layer() && m_site.layer()->paletteBank() >= 0) {
+    if (!m_bankNewPalette)
+      m_bankNewPalette.reset(new Palette(*m_oldPalette));
+    return m_bankNewPalette.get();
+  }
   return m_site.sprite()->palette(m_site.frame());
 }
 
@@ -495,7 +501,7 @@ bool FilterManagerImpl::paletteHasChanged()
 void FilterManagerImpl::restoreSpritePalette()
 {
   // Restore the original palette to save the undoable "cmd"
-  if (m_oldPalette)
+  if (m_oldPalette && !m_bankNewPalette)
     m_site.sprite()->setPalette(m_oldPalette.get(), false);
 }
 

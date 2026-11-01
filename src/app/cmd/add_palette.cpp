@@ -11,6 +11,7 @@
 #include "app/cmd/add_palette.h"
 
 #include "doc/palette.h"
+#include "doc/palette_rgb444.h"
 #include "doc/sprite.h"
 
 namespace app { namespace cmd {
@@ -19,6 +20,8 @@ using namespace doc;
 
 AddPalette::AddPalette(Sprite* sprite, Palette* pal) : WithSprite(sprite), m_palette(*pal)
 {
+  if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+    doc::snap_rgb444(m_palette);
 }
 
 void AddPalette::onExecute()

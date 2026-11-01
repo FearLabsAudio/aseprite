@@ -14,6 +14,9 @@
 #include "app/doc.h"
 #include "doc/layer_tilemap.h"
 #include "doc/sprite.h"
+#include "doc/tilesets.h"
+#include "doc/palette_bank.h"
+#include <stdexcept>
 
 namespace app { namespace cmd {
 
@@ -22,6 +25,14 @@ SetLayerTileset::SetLayerTileset(doc::LayerTilemap* layer, doc::tileset_index ne
   , m_oldTsi(layer->tilesetIndex())
   , m_newTsi(newTsi)
 {
+  if (layer->paletteBank() >= 0) {
+    auto* tileset = layer->sprite()->tilesets()->get(newTsi);
+    if (!tileset)
+      throw std::runtime_error("The selected tileset does not exist.");
+    for (const auto& tile : *tileset)
+      if (tile.image && !doc::is_local_bank_image(tile.image.get()))
+        throw std::runtime_error("Palette-bank layers require tilesets with local indices 0-15.");
+  }
 }
 
 void SetLayerTileset::onExecute()

@@ -30,6 +30,9 @@
 #include "doc/image.h"
 #include "doc/layer.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
+#include "doc/layer_tilemap.h"
+#include "doc/tilesets.h"
 #include "doc/sprite.h"
 #include "os/system.h"
 #include "os/window.h"
@@ -271,6 +274,82 @@ TEST(App, ShadingOncePerStroke)
         delete document;
       }
     }
+  }
+  // The same indexed shading algorithms must operate on LOCAL slots in a
+  // banked tilemap, including progressive re-entry and the half-strength ring.
+  pref.tool(nullptr).dynamics.gradient(tools::DynamicSensor::Static);
+  for (bool tilemap : {false, true}) {
+  for (bool progressive : {false, true}) {
+    for (bool left : {false, true}) {
+      auto* document = ctx->documents().add(24, 24, doc::ColorMode::INDEXED);
+      auto* sprite = document->sprite();
+      sprite->palette(0)->resize(256);
+      for (int i = 49; i < 64; ++i)
+        sprite->palette(0)->setEntry(i, doc::rgba(100, 100, 100, 255));
+      auto* tileset = new doc::Tileset(sprite, doc::Grid::MakeRect(gfx::Size(24, 24)), 2);
+      const auto tsi = sprite->tilesets()->add(tileset);
+      doc::LayerImage* layer = tilemap ? static_cast<doc::LayerImage*>(new doc::LayerTilemap(sprite, tsi)) :
+                                        new doc::LayerImage(sprite);
+      layer->userData().properties(doc::kPaletteBankProperties)["bank"] = uint8_t(3);
+      sprite->root()->addLayer(layer);
+      doc::ImageRef pixels(doc::Image::create(IMAGE_INDEXED, 24, 24));
+      const int initial = left ? 10 : 2;
+      pixels->clear(initial);
+      tileset->set(1, pixels);
+      doc::ImageRef map(doc::Image::create(IMAGE_TILEMAP, 1, 1));
+      map->putPixel(0, 0, doc::tile(1, 0));
+      layer->addCel(new doc::Cel(0, tilemap ? map : pixels));
+      auto pixel = [&](int x, int y) {
+        return (tilemap ? tileset->get(1).get() : layer->cel(0)->image())->getPixel(x, y);
+      };
+      Site site;
+      site.document(document);
+      site.sprite(sprite);
+      site.layer(layer);
+      site.tilesetMode(TilesetMode::Manual);
+      set_current_palette(site.palette(), true);
+      toolPref.shadingOncePerStroke(!progressive);
+      toolPref.shadingOnReentry(progressive);
+      ToolLoopParams params;
+      params.tool = tool;
+      params.ink = app.toolBox()->getInkById("shading");
+      params.inkType = tools::InkType::SHADING;
+      params.fg = params.bg = Color::fromIndex(1);
+      params.button = left ? tools::ToolLoop::Left : tools::ToolLoop::Right;
+      params.controller = tool->getController(params.button);
+      params.brush.reset(new doc::Brush(doc::kSquareBrushType, 3, 0));
+      {
+        std::unique_ptr<tools::ToolLoop> loop(create_tool_loop_for_script(ctx, site, params));
+        ASSERT_TRUE(loop);
+        EXPECT_EQ(16, loop->getPalette()->size());
+        tools::ToolLoopManager manager(loop.get());
+        auto pointer = [&](int x) {
+          return tools::Pointer(gfx::Point(x, 8), tools::Vec2(1, 0),
+                                left ? tools::Pointer::Left : tools::Pointer::Right,
+                                tools::Pointer::Type::Mouse, 1.0f);
+        };
+        manager.prepareLoop(pointer(8));
+        manager.pressButton(pointer(8));
+        for (int pass = 1; pass < 5; ++pass) {
+          manager.movement(pointer(15));
+          manager.movement(pointer(8));
+        }
+        manager.releaseButton(pointer(8));
+        manager.end();
+      }
+      const int step = left ? -1 : 1;
+      EXPECT_EQ(initial + step * (progressive ? 5 : 1), pixel(8, 8));
+      if (progressive)
+        EXPECT_EQ(initial + step * 2, pixel(8, 10));
+      document->undoHistory()->undo();
+      EXPECT_EQ(initial, pixel(8, 8));
+      document->undoHistory()->redo();
+      EXPECT_EQ(initial + step * (progressive ? 5 : 1), pixel(8, 8));
+      pref.removeDocument(document);
+      document->close();
+      delete document;
+    }
+  }
   }
   toolPref.shadingOncePerStroke(false);
   toolPref.shadingOnReentry(false);

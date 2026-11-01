@@ -132,6 +132,16 @@ void ColorPicker::pickColor(const Site& site,
         }
       }
       else if (site.tilemapMode() == TilemapMode::Pixels) {
+        // Preserve the exact local slot when sampling a banked active layer.
+        // Sampling another layer's bank must not feed its global index to paint.
+        if (site.layer() && site.layer()->paletteBank() >= 0) {
+          color_t local;
+          if (site.cel() && get_cel_pixel(site.cel(), pos.x, pos.y, site.frame(), local)) {
+            m_color = app::Color::fromIndex(local);
+            m_layer = const_cast<Layer*>(site.layer());
+          }
+          break;
+        }
         m_color = app::Color::fromImage(
           sprite->pixelFormat(),
           render::get_sprite_pixel(sprite,

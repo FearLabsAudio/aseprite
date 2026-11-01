@@ -33,6 +33,7 @@
 #include "doc/layer_tilemap.h"
 #include "doc/mask.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
 #include "doc/primitives.h"
 #include "doc/sprite.h"
 #include "doc/tileset.h"
@@ -46,6 +47,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 #define OPS_TRACE(...) // TRACE(__VA_ARGS__)
@@ -306,6 +308,15 @@ Cel* create_cel_copy(CmdSequence* cmds,
   doc::PixelFormat dstPixelFormat = dstSprite->pixelFormat();
 
   const Image* srcImage = srcCel->image();
+  if (srcImage && dstLayer->paletteBank() >= 0 && srcImage->pixelFormat() == IMAGE_INDEXED &&
+      !doc::is_local_bank_image(srcImage))
+    throw std::runtime_error("Cannot copy indices above 15 into a palette-bank layer.");
+  ImageRef expandedSource;
+  if (srcImage && srcImage->pixelFormat() == IMAGE_INDEXED &&
+      srcCel->layer()->paletteBank() >= 0 && dstLayer->paletteBank() < 0) {
+    expandedSource = doc::expand_bank_image(srcImage, srcCel->layer()->paletteBank());
+    srcImage = expandedSource.get();
+  }
   if (srcImage) {
     if (dstLayer->isTilemap())
       dstPixelFormat = IMAGE_TILEMAP;
@@ -368,7 +379,8 @@ Cel* create_cel_copy(CmdSequence* cmds,
                                    gfx::Rect(gfx::Point(0, 0), srcCel->bounds().size()),
                                    gfx::Clip(0, 0, tmpImage->bounds()),
                                    255,
-                                   BlendMode::NORMAL);
+                                   BlendMode::NORMAL,
+                                   dstLayer->paletteBank() < 0);
 
         doc::ImageRef tilemap = dstCel->imageRef();
 
@@ -394,7 +406,8 @@ Cel* create_cel_copy(CmdSequence* cmds,
                                  gfx::Rect(gfx::Point(0, 0), srcCel->bounds().size()),
                                  gfx::Clip(0, 0, dstCel->image()->bounds()),
                                  255,
-                                 BlendMode::NORMAL);
+                                 BlendMode::NORMAL,
+                                 dstLayer->paletteBank() < 0);
 
       // Shrink image
       if (dstLayer->isTransparent()) {
@@ -425,7 +438,7 @@ Cel* create_cel_copy(CmdSequence* cmds,
   else if ((dstSprite->pixelFormat() != srcImage->pixelFormat()) ||
            // If both images are indexed but with different palette, we can
            // convert the source cel to RGB first.
-           (dstSprite->pixelFormat() == IMAGE_INDEXED && srcImage->pixelFormat() == IMAGE_INDEXED &&
+           (dstLayer->paletteBank() < 0 && dstSprite->pixelFormat() == IMAGE_INDEXED && srcImage->pixelFormat() == IMAGE_INDEXED &&
             srcCel->sprite()
               ->palette(srcCel->frame())
               ->countDiff(dstSprite->palette(dstFrame), nullptr, nullptr))) {
@@ -505,6 +518,7 @@ void draw_image_into_new_tilemap_cel(CmdSequence* cmds,
 
   auto doc = static_cast<Doc*>(dstLayer->sprite()->document());
   doc::Tileset* tileset = dstLayer->tileset();
+  const bool localBank = dstLayer->paletteBank() >= 0 || doc::tileset_uses_palette_banks(tileset);
   doc::Grid grid = tileset->grid();
   grid.origin(gridOrigin);
 
@@ -532,6 +546,8 @@ void draw_image_into_new_tilemap_cel(CmdSequence* cmds,
     if (grid.hasMask())
       mask_image(tileImage.get(), grid.mask().get());
 
+    if (localBank && !doc::is_local_bank_image(tileImage.get()))
+      throw std::runtime_error("A 4bpp tileset can only contain local indices 0-15.");
     preprocess_transparent_pixels(tileImage.get());
 
     doc::tile_index tileIndex;
@@ -593,6 +609,8 @@ void modify_tilemap_cel_region(CmdSequence* cmds,
   ASSERT(cel->image()->pixelFormat() == IMAGE_TILEMAP);
 
   doc::LayerTilemap* tilemapLayer = static_cast<doc::LayerTilemap*>(cel->layer());
+  const bool localBank = tilemapLayer->paletteBank() >= 0 ||
+                        doc::tileset_uses_palette_banks(tilemapLayer->tileset());
 
   Doc* doc = static_cast<Doc*>(tilemapLayer->sprite()->document());
   bool addUndoToTileset = false;
@@ -689,6 +707,8 @@ void modify_tilemap_cel_region(CmdSequence* cmds,
 
       const gfx::Rect tileInCanvasRc(grid.tileToCanvas(tilePt), tileSize);
       ImageRef tileImage(getTileImage(existentTileImage, tileInCanvasRc));
+      if (localBank && !doc::is_local_bank_image(tileImage.get()))
+        throw std::runtime_error("A 4bpp tileset can only contain local indices 0-15.");
       if (grid.hasMask())
         mask_image(tileImage.get(), grid.mask().get());
 
@@ -794,6 +814,8 @@ void modify_tilemap_cel_region(CmdSequence* cmds,
 
       const gfx::Rect tileInCanvasRc(grid.tileToCanvas(tilePt), tileSize);
       ImageRef tileImage(getTileImage(existentTileImage, tileInCanvasRc));
+      if (localBank && !doc::is_local_bank_image(tileImage.get()))
+        throw std::runtime_error("A 4bpp tileset can only contain local indices 0-15.");
       if (grid.hasMask())
         mask_image(tileImage.get(), grid.mask().get());
 

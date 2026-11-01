@@ -20,6 +20,7 @@
 #include "app/tx.h"
 #include "base/fs.h"
 #include "doc/palette.h"
+#include "doc/palette_rgb444.h"
 #include "doc/sprite.h"
 
 namespace app { namespace script {
@@ -200,6 +201,8 @@ int Palette_setColor(lua_State* L)
 
   if (auto sprite = obj->sprite(L)) {
     // Nothing to do
+    if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+      docColor = doc::snap_rgb444(docColor);
     if (pal->getEntry(i) == docColor)
       return 0;
 

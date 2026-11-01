@@ -27,7 +27,8 @@ using namespace doc;
 class SetPalette : public Cmd,
                    public WithSprite {
 public:
-  SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette);
+  SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
+             bool constrainChannels = true);
 
 protected:
   void onExecute() override;

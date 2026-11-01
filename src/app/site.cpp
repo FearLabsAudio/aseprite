@@ -28,12 +28,14 @@ using namespace doc;
 
 Palette* Site::palette()
 {
-  return (m_sprite ? m_sprite->palette(m_frame) : nullptr);
+  return (m_layer ? m_layer->palette(m_frame) :
+          m_sprite ? m_sprite->palette(m_frame) : nullptr);
 }
 
 RgbMap* Site::rgbMap() const
 {
-  return (m_sprite ? m_sprite->rgbMap(m_frame) : nullptr);
+  return (m_layer ? m_layer->rgbMap(m_frame) :
+          m_sprite ? m_sprite->rgbMap(m_frame) : nullptr);
 }
 
 Cel* Site::cel() const
@@ -65,7 +67,8 @@ Image* Site::image(int* x, int* y, int* opacity) const
 
 Palette* Site::palette() const
 {
-  return (m_sprite ? m_sprite->palette(m_frame) : nullptr);
+  return (m_layer ? m_layer->palette(m_frame) :
+          m_sprite ? m_sprite->palette(m_frame) : nullptr);
 }
 
 void Site::range(const view::RealRange& range)

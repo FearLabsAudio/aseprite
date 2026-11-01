@@ -267,6 +267,7 @@ void MovingSliceState::drawExtraCel(int layerIdx)
       dst->clear(dst->maskColor());
 
       render::Render render;
+      render.setPaletteBanksEnabled(false);
       render.renderLayer(dst,
                          m_site.layer(),
                          m_site.frame(),

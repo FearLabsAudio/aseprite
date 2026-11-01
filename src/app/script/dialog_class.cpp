@@ -1137,6 +1137,13 @@ int Dialog_file(lua_State* L)
     }
     lua_pop(L, 1);
 
+    type = lua_getfield(L, 2, "folder");
+    if (type == LUA_TBOOLEAN && lua_toboolean(L, -1)) {
+      dlgType = FileSelectorType::Folder;
+      title = "Select Folder";
+    }
+    lua_pop(L, 1);
+
     type = lua_getfield(L, 2, "title");
     if (type == LUA_TSTRING)
       title = lua_tostring(L, -1);
@@ -1167,6 +1174,8 @@ int Dialog_file(lua_State* L)
   }
 
   auto widget = new FilenameField(fnFieldType, fn);
+  if (dlgType == FileSelectorType::Folder)
+    widget->setEditFullPath(true, false);
 
   if (lua_istable(L, 2)) {
     int type = lua_getfield(L, 2, "onchange");

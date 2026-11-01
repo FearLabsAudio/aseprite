@@ -19,6 +19,7 @@
 #include "app/site.h"
 #include "base/fs.h"
 #include "doc/image.h"
+#include "doc/layer.h"
 #include "doc/palette.h"
 #include "doc/sprite.h"
 
@@ -144,6 +145,13 @@ void set_default_palette(const Palette* palette)
 bool set_current_palette(const Palette* _palette, bool forced)
 {
   const Palette* palette = (_palette ? _palette : ase_default_palette);
+  // Callers refreshing the document palette must show the active bank.
+  if (auto* context = App::instance()->context()) {
+    const Site site = context->activeSite();
+    if (site.layer() && site.layer()->paletteBank() >= 0 &&
+        palette == site.sprite()->palette(site.frame()))
+      palette = site.palette();
+  }
   bool ret = false;
 
   // Have changes

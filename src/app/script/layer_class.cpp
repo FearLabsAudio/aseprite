@@ -23,8 +23,12 @@
 #include "app/script/luacpp.h"
 #include "app/script/userdata.h"
 #include "app/tx.h"
+#include "app/util/palette_bank.h"
 #include "app/ui/timeline/timeline.h"
 #include "doc/layer.h"
+#include "doc/cel.h"
+#include "doc/image.h"
+#include "render/render.h"
 #include "doc/layer_tilemap.h"
 #include "doc/sprite.h"
 #include "doc/tileset.h"
@@ -476,13 +480,52 @@ int Layer_set_tileset(lua_State* L)
   return 0;
 }
 
+// Canvas-aligned local pixels for external 4bpp authoring tools. Visibility,
+// opacity, and blend modes are deliberately not baked into the palette indices.
+int Layer_renderLocal(lua_State* L)
+{
+  auto* layer = get_docobj<Layer>(L, 1);
+  if (!layer->isImage() || layer->isReference() || layer->sprite()->pixelFormat() != IMAGE_INDEXED)
+    return luaL_error(L, "renderLocal requires an indexed image or tilemap layer");
+  const auto frame = get_frame_number_from_arg(L, 2);
+  auto image = std::unique_ptr<Image>(Image::create(layer->sprite()->spec()));
+  image->clear(0);
+  if (auto* cel = layer->cel(frame))
+    render::Render().renderCel(image.get(), cel, layer->sprite(), cel->image(),
+                              layer->tileset(), layer->sprite()->palette(frame),
+                              cel->bounds(), gfx::Clip(0, 0, image->bounds()),
+                              255, doc::BlendMode::NORMAL, false);
+  push_image(L, image.release());
+  return 1;
+}
+
+int Layer_get_paletteBank(lua_State* L)
+{
+  lua_pushinteger(L, get_docobj<Layer>(L, 1)->paletteBank());
+  return 1;
+}
+
+int Layer_set_paletteBank(lua_State* L)
+{
+  auto* layer = get_docobj<Layer>(L, 1);
+  const lua_Integer bank = luaL_checkinteger(L, 2);
+  if (bank < -1 || bank > 15)
+    return luaL_error(L, "Palette bank must be -1 or between 0 and 15");
+  Tx tx(layer->sprite());
+  set_layer_palette_bank(tx, layer, bank);
+  tx.commit();
+  return 0;
+}
+
 const luaL_Reg Layer_methods[] = {
+  { "renderLocal", Layer_renderLocal },
   { "__eq",  Layer_eq  },
   { "cel",   Layer_cel },
   { nullptr, nullptr   }
 };
 
 const Property Layer_properties[] = {
+  { "paletteBank", Layer_get_paletteBank, Layer_set_paletteBank },
   { "id",            Layer_get_id,                   nullptr                        },
   { "sprite",        Layer_get_sprite,               nullptr                        },
   { "parent",        Layer_get_parent,               Layer_set_parent               },

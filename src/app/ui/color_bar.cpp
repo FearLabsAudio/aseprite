@@ -11,6 +11,9 @@
   #include "config.h"
 #endif
 
+#include "doc/palette_bank.h"
+#include "doc/palette_rgb444.h"
+
 #include "app/ui/color_bar.h"
 
 #include "app/app.h"
@@ -143,8 +146,10 @@ ColorBar::ColorBar(TooltipManager* tooltipManager)
   : Box(VERTICAL)
   , m_editPal(1)
   , m_buttons(int(PalButton::MAX))
+  , m_force4BitButton(Strings::color_bar_force_4_bit())
   , m_tilesButton(1)
   , m_tilesetModeButtons(3)
+  , m_paletteBanksButton("PB")
   , m_splitter(Splitter::ByPercentage, VERTICAL)
   , m_splitterPalTil(Splitter::ByPercentage, VERTICAL)
   , m_paletteView(true, PaletteView::FgBgColors, this, 16)
@@ -238,9 +243,25 @@ ColorBar::ColorBar(TooltipManager* tooltipManager)
 
   m_tilesHBox.addChild(&m_tilesButton);
   m_tilesHBox.addChild(&m_tilesetModeButtons);
+  m_tilesHBox.addChild(&m_paletteBanksButton);
+  m_paletteBanksButton.setStyle(theme->styles.palButton());
+  tooltipManager->addTooltipFor(&m_paletteBanksButton, "Palette Banks", TOP);
+  m_paletteBanksButton.Click.connect([] {
+    if (auto* command = Commands::instance()->byId("KarnPaletteBanks"))
+      UIContext::instance()->executeCommand(command);
+  });
 
   m_palHBox.addChild(&m_editPal);
   m_palHBox.addChild(&m_buttons);
+  m_palHBox.addChild(&m_force4BitButton);
+  m_force4BitButton.setVisible(false);
+  m_force4BitButton.Click.connect([this] {
+    UIContext::instance()->executeCommand(
+      Commands::instance()->byId(CommandId::Force4BitColorChannels()));
+    // Also restore the check mark if the document could not be modified.
+    m_force4BitButton.setSelected(
+      doc::force_rgb444(UIContext::instance()->activeSite().sprite()));
+  });
 
   m_buttons.setExpansive(true);
   m_tilesetModeButtons.setExpansive(true);
@@ -317,6 +338,9 @@ ColorBar::ColorBar(TooltipManager* tooltipManager)
 
     m_buttons.setMaxSize(
       gfx::Size(m_buttons.sizeHint().w, theme->dimensions.colorBarButtonsHeight()));
+    m_force4BitButton.setMinMaxSize(
+      gfx::Size(0, theme->dimensions.colorBarButtonsHeight()),
+      gfx::Size(std::numeric_limits<int>::max(), theme->dimensions.colorBarButtonsHeight()));
     m_tilesetModeButtons.setMaxSize(
       gfx::Size(m_tilesetModeButtons.sizeHint().w, theme->dimensions.colorBarButtonsHeight()));
 
@@ -389,6 +413,9 @@ void ColorBar::setPixelFormat(PixelFormat pixelFormat)
 {
   m_fgColor.setPixelFormat(pixelFormat);
   m_bgColor.setPixelFormat(pixelFormat);
+  m_force4BitButton.setVisible(pixelFormat == IMAGE_INDEXED &&
+                               UIContext::instance()->activeSite().sprite());
+  layout();
 }
 
 app::Color ColorBar::getFgColor() const
@@ -659,6 +686,8 @@ void ColorBar::onResize(ui::ResizeEvent& ev)
 
 void ColorBar::onActiveSiteChange(const Site& site)
 {
+  if (site.sprite() && doc::has_palette_banks(site.sprite()))
+    hideRemapPal();
   if (m_lastDocument != site.document()) {
     if (m_lastDocument)
       m_lastDocument->remove_observer(this);
@@ -683,10 +712,14 @@ void ColorBar::onActiveSiteChange(const Site& site)
     }
   }
 
-  if (m_tilesHBox.isVisible() != isTilemap) {
-    m_tilesHBox.setVisible(isTilemap);
-    updateFromTilemapMode();
-  }
+  const bool hasBanks = site.sprite() && site.sprite()->pixelFormat() == IMAGE_INDEXED;
+  m_tilesHBox.setVisible(isTilemap || hasBanks);
+  m_tilesButton.setVisible(isTilemap);
+  m_tilesetModeButtons.setVisible(isTilemap);
+  m_paletteBanksButton.setVisible(hasBanks);
+  m_force4BitButton.setVisible(hasBanks);
+  m_force4BitButton.setSelected(doc::force_rgb444(site.sprite()));
+  updateFromTilemapMode();
 
   if (isTilemap) {
     doc::ObjectId newTilesetId =
@@ -769,6 +802,12 @@ void ColorBar::onAfterExecuteCommand(CommandExecutionEvent& ev)
   // undone a "RGB -> Indexed" conversion), we hide the "Remap
   // Palette" button.
   Site site = UIContext::instance()->activeSite();
+  const bool indexed = site.sprite() && site.sprite()->pixelFormat() == IMAGE_INDEXED;
+  m_force4BitButton.setSelected(doc::force_rgb444(site.sprite()));
+  if (m_force4BitButton.isVisible() != indexed) {
+    m_force4BitButton.setVisible(indexed);
+    layout();
+  }
   if (site.sprite() && site.sprite()->pixelFormat() != IMAGE_INDEXED) {
     hideRemapPal();
   }
@@ -841,6 +880,11 @@ void ColorBar::onTilesetModeButtonRightClick()
 
 void ColorBar::onRemapPalButtonClick()
 {
+  const auto bankSite = UIContext::instance()->activeSite();
+  if (bankSite.sprite() && doc::has_palette_banks(bankSite.sprite())) {
+    hideRemapPal();
+    return;
+  }
   ASSERT(m_oldPalette);
 
   // Create remap from m_oldPalette to the current palette
@@ -1066,6 +1110,10 @@ void ColorBar::setPalette(const doc::Palette* newPalette, const std::string& act
     ContextWriter writer(UIContext::instance(), 500);
     Sprite* sprite = writer.sprite();
     frame_t frame = writer.frame();
+    Palette merged = doc::merge_bank_palette(writer.layer(), frame, *newPalette);
+    if (sprite && sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+      doc::snap_rgb444(merged);
+    newPalette = &merged;
     if (sprite && newPalette->countDiff(sprite->palette(frame), nullptr, nullptr)) {
       Tx tx(writer, actionText, ModifyDocument);
       tx(new cmd::SetPalette(sprite, frame, newPalette));
@@ -1562,6 +1610,8 @@ void ColorBar::setAscending(bool ascending)
 void ColorBar::showRemapPal()
 {
   Site site = UIContext::instance()->activeSite();
+  if (site.sprite() && doc::has_palette_banks(site.sprite()))
+    return;
   if (site.sprite() && site.sprite()->pixelFormat() == IMAGE_INDEXED) {
     if (!m_oldPalette) {
       m_oldPalette.reset(new Palette(*get_current_palette()));
@@ -1796,6 +1846,9 @@ int ColorBar::setPaletteEntry(const app::Color& color)
   }
 
   doc::color_t c = doc::rgba(color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
+  const auto* sprite = UIContext::instance()->activeSite().sprite();
+  if (sprite && sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+    c = doc::snap_rgb444(c);
 
   Palette* palette = get_current_palette();
   for (int i = 0; i < palette->size(); ++i) {
@@ -1820,6 +1873,10 @@ void ColorBar::updateCurrentSpritePalette(const char* operationName)
       Sprite* sprite(writer.sprite());
       Palette* newPalette = get_current_palette(); // System current pal
       frame_t frame = writer.frame();
+      Palette merged = doc::merge_bank_palette(writer.layer(), frame, *newPalette);
+      if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+        doc::snap_rgb444(merged);
+      newPalette = &merged;
       Palette* currentSpritePalette = sprite->palette(frame); // Sprite current pal
       int from, to;
 
@@ -1886,6 +1943,9 @@ void ColorBar::setupTooltips(TooltipManager* tooltipManager)
                                 BOTTOM);
   tooltipManager->addTooltipFor(m_buttons.getItem((int)PalButton::OPTIONS),
                                 Strings::color_bar_options(),
+                                BOTTOM);
+  tooltipManager->addTooltipFor(&m_force4BitButton,
+                                Strings::color_bar_force_4_bit_tooltip(),
                                 BOTTOM);
   tooltipManager->addTooltipFor(&m_remapPalButton,
                                 Strings::color_bar_remap_palette_tooltip(),

@@ -308,7 +308,7 @@ private:
 
     extraCel->setPosition(m_baseBounds.x + bounds.x, m_baseBounds.y + bounds.y);
 
-    render::Render().renderLayer(extraImg,
+    render::Render().setPaletteBanksEnabled(false).renderLayer(extraImg,
                                  m_editor->layer(),
                                  m_editor->frame(),
                                  gfx::Clip(0, 0, extraCel->bounds()),

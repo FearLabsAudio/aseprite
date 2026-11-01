@@ -165,6 +165,7 @@ private:
   Target m_target;     // Filtered targets
   CelsTarget m_celsTarget;
   std::unique_ptr<doc::Palette> m_oldPalette;
+  std::unique_ptr<doc::Palette> m_bankNewPalette;
   std::unique_ptr<Tx> m_tx;
   base::task_token m_noToken;
   base::task_token* m_taskToken;
