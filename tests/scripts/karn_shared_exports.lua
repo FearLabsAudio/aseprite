@@ -117,6 +117,10 @@ local function dialog(o)
   function d:check(o) self.data[o.id]=o.selected; self.controls[o.id]=o; return self end
   function d:modify(o)
     for k,v in pairs(o) do self.controls[o.id][k]=v end
+    if o.filename then
+      self.data[o.id]=o.filename
+      if self.controls[o.id].onchange then self.controls[o.id].onchange() end
+    end
     return self
   end
   function d:button(o) self.buttons[o.text]=o.onclick or true; return self end
@@ -126,6 +130,13 @@ local function dialog(o)
     assert(self.controls.exportCollage.enabled==expectCollage and self.data.exportCollage==expectCollage)
     assert(self.controls.output.enabled==expectCollage)
     for k,v in pairs(dialogEdits) do self.data[k]=v end
+    if dialogEdits.tilekits and self.controls.tilekits.onchange then
+      self.controls.tilekits.onchange()
+      for _,id in ipairs{'output','kit1','kit2'} do
+        assert(E.absolute(app.fs.filePath(self.data[id]))==E.absolute(dialogEdits.tilekits),
+          'Changing the output folder must update every JSON destination immediately')
+      end
+    end
     if dialogEdits.exportCollage~=nil then
       self.controls.exportCollage.onclick()
       assert(self.controls.output.enabled==dialogEdits.exportCollage)
@@ -196,6 +207,43 @@ assert(E.readJson(newCollage).Id~=mixed.Id)
 assert(E.readJson(newKitA).Id~=replacement.Id and E.readJson(newKitB).Id~=final.rows[2].kitId)
 assert(E.readJson(newCollage).Collage.Cells[1].TileKitId==E.readJson(newKitA).Id)
 assert(read(path)==bytes,'Collage exports must keep shared BMPs unchanged')
+-- Changing only the folder must relocate ALL JSON destinations, even when
+-- filename fields still hold saved absolute paths from the previous export.
+local nested=tilekits..'/Starship/Exterior'
+local nestedCollage=nested..'/'..app.fs.fileName(newCollage)
+local nestedKitA,nestedKitB=nested..'/'..app.fs.fileName(newKitA),nested..'/'..app.fs.fileName(newKitB)
+for _,filename in ipairs{nestedCollage,nestedKitA,nestedKitB} do os.remove(filename) end
+local originalJson={}
+for _,filename in ipairs{newCollage,newKitA,newKitB} do originalJson[filename]=read(filename) end
+local oldFolderSettings=json.decode(s.properties('karn.exports.v1').collage)
+local oldLayerPaths={}
+for _,l in ipairs(s.layers) do oldLayerPaths[l.id]=l.properties('karn.exports.v1').collage end
+dialogEdits={tilekits=nested}
+window.show(plugin,E,'karn.exports.v1','karn.palette-banks.v1',bmpWindow)
+assert(alerts[#alerts].text:find('Exported TileKits'))
+local nestedId=E.readJson(nestedCollage).Id
+local nestedKitId=E.readJson(nestedKitA).Id
+assert(nestedId~=E.readJson(newCollage).Id and nestedKitId~=E.readJson(newKitA).Id)
+assert(E.readJson(nestedCollage).Collage.Cells[1].TileKitId==nestedKitId)
+assert(E.readJson(nestedKitB).ImagePath==E.readJson(newKitB).ImagePath)
+for filename,content in pairs(originalJson) do assert(read(filename)==content,'Old exports must remain untouched') end
+assert(read(path)==bytes,'Moving JSON exports must not relocate or rewrite BMPs')
+local savedNested=json.decode(s.properties('karn.exports.v1').collage)
+assert(E.absolute(savedNested.output)==E.absolute(nestedCollage) and E.absolute(savedNested.tilekits)==E.absolute(nested))
+-- Reopening and exporting again updates the chosen files with their existing IDs.
+dialogEdits={}
+window.show(plugin,E,'karn.exports.v1','karn.palette-banks.v1',bmpWindow)
+assert(E.readJson(nestedCollage).Id==nestedId and E.readJson(nestedKitA).Id==nestedKitId)
+-- Repair documents saved by the old UI with a new folder but stale absolute
+-- file paths. The destination files' IDs win over identities from the old paths.
+oldFolderSettings.tilekits=nested
+s.properties('karn.exports.v1').collage=json.encode(oldFolderSettings)
+for _,l in ipairs(s.layers) do l.properties('karn.exports.v1').collage=oldLayerPaths[l.id] end
+window.show(plugin,E,'karn.exports.v1','karn.palette-banks.v1',bmpWindow)
+assert(alerts[#alerts].text:find('Exported TileKits'))
+assert(E.readJson(nestedCollage).Id==nestedId and E.readJson(nestedKitA).Id==nestedKitId)
+assert(E.absolute(json.decode(s.properties('karn.exports.v1').collage).output)==E.absolute(nestedCollage))
+for _,filename in ipairs{nestedCollage,nestedKitA,nestedKitB} do assert(os.remove(filename)) end
 -- Restore the fixture's primary resources for KarnEdit loader checks.
 E.remember(final)
 local restored=collagePlan(false); E.write(restored); E.remember(restored)

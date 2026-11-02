@@ -179,9 +179,12 @@ checked by default when visible banked layers use two or more different banks.
 With one layer or a single bank, it is disabled and unchecked. Uncheck it to
 export only bitmap TileKits. Their export is always available, independently of
 the checkbox. The collage JSON path is only active when Export Collage is checked.
-BMP paths are shown for reference; BMP exports... reopens their shared setup. Reset
-TileKit paths places the JSON files in the selected TileKit folder. BMPs and
-TileKits normally live in different folders. The workspace must contain
+BMP paths are shown for reference; BMP exports... reopens their shared setup. The
+Reset TileKit paths button restores filenames based on source BMP names. The selected
+TileKit folder is the destination for both TileKit and collage JSON files;
+changing it immediately relocates every JSON path while keeping filenames.
+Reopening the dialog also reconciles older saved paths with this folder.
+BMPs and TileKits normally live in different folders. The workspace must contain
 src/constants.p8; both folders must be inside it, and the collage JSON must be
 inside the TileKit folder. Existing TileKit ImagePath values are updated to
 the shared BMP destinations, using workspace-relative paths.

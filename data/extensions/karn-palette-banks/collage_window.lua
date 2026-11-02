@@ -44,6 +44,28 @@ function UI.show(plugin,E,GROUP,BANKS,bmpWindow)
     local action
     local current=E.collageBmps(s,frame)
     local dlg=Dialog{title='Export to Karnedit',autofit=0}
+    local ready,syncing=false,false
+    local function syncOutputPaths()
+      -- FilenameField can display only a basename while retaining an older
+      -- absolute path. The selected folder owns every JSON destination.
+      if not ready or syncing then return end
+      local d=dlg.data
+      local ok,folder=pcall(E.absolute,d.tilekits)
+      if not ok then return end -- Allow an incomplete folder while typing.
+      syncing=true
+      local function rebase(id)
+        local filename=d[id]
+        if filename and filename~='' then
+          local path=app.fs.joinPath(folder,app.fs.fileName(filename))
+          if filename:gsub('\\','/')~=path:gsub('\\','/') then
+            dlg:modify{id=id,filename=path}
+          end
+        end
+      end
+      rebase('output')
+      for i in ipairs(groups) do rebase('kit'..i) end
+      syncing=false
+    end
     dlg:label{text='Step 2: one TileKit per BMP | Frame '..frame}:newrow()
     dlg:label{text=current and 'BMP exports are current.' or 'Update BMP exports before continuing.'}:newrow()
     local available=E.canExportCollage(s)
@@ -53,9 +75,10 @@ function UI.show(plugin,E,GROUP,BANKS,bmpWindow)
     if not available then
       dlg:label{text='Requires visible layers assigned to different palette banks.'}:newrow()
     end
-    dlg:file{id='output',label='Collage:',filename=output,save=true,entry=true,filetypes={'json'},enabled=exportCollage}
+    dlg:file{id='output',label='Collage:',filename=output,save=true,entry=true,filetypes={'json'},enabled=exportCollage,
+      onchange=syncOutputPaths}
     dlg:file{id='workspace',label='Game workspace:',filename=workspace,folder=true,entry=true}
-    dlg:file{id='tilekits',label='TileKit folder:',filename=tilekits,folder=true,entry=true}
+    dlg:file{id='tilekits',label='TileKit folder:',filename=tilekits,folder=true,entry=true,onchange=syncOutputPaths}
     dlg:samerow():button{text='Reset TileKit paths',hexpand=false,onclick=function()
       for i,g in ipairs(groups) do
         local path=app.fs.joinPath(dlg.data.tilekits,app.fs.fileTitle(g.bmp)..'.json')
@@ -67,9 +90,12 @@ function UI.show(plugin,E,GROUP,BANKS,bmpWindow)
       local names={}; for _,l in ipairs(g.layers) do names[#names+1]=l.name end
       dlg:separator{text=table.concat(names,' + ')}
       dlg:label{label='BMP:',text=app.fs.fileName(g.bmp)}
-      dlg:file{id='kit'..i,label='TileKit:',filename=g.kit,entry=true,save=true,filetypes={'json'}}
+      dlg:file{id='kit'..i,label='TileKit:',filename=g.kit,entry=true,save=true,filetypes={'json'},onchange=syncOutputPaths}
     end
+    ready=true
+    syncOutputPaths()
     local function capture()
+      syncOutputPaths()
       local d=dlg.data
       output,workspace,tilekits=d.output,d.workspace,d.tilekits
       exportCollage=available and d.exportCollage
@@ -79,7 +105,7 @@ function UI.show(plugin,E,GROUP,BANKS,bmpWindow)
         g.kit=path
       end
     end
-    dlg:label{text='Existing files keep their IDs and brushes.'}
+    dlg:label{text='TileKits and collage save in the selected folder. Existing files keep their IDs and brushes.'}
     dlg:button{text='Export',onclick=function()
       attempt(function()
         capture()
