@@ -66,12 +66,6 @@ function UI.register(plugin,E,GROUP,BANKS)
       app.refresh()
     end
     dlg:tab{id='layersTab',text='Layers'}
-    dlg:separator{text='Document Palette'}
-    for row=0,15 do
-      local colors=documentColors(row)
-      dlg:shades{id='documentColors'..row,colors=colors,visible=#colors>0}:newrow()
-    end
-    dlg:separator{text='Layers'}
     for i,l in ipairs(layers) do
       dlg:entry{id='layerName'..i,text=l.name,onchange=function()
         if refreshing then return end
@@ -100,6 +94,12 @@ function UI.register(plugin,E,GROUP,BANKS)
         end}:newrow()
     end
     dlg:tab{id='banksTab',text='Banks'}
+    dlg:separator{text='Document Palette'}
+    for row=0,15 do
+      local colors=documentColors(row)
+      dlg:shades{id='documentColors'..row,colors=colors,visible=#colors>0}:newrow()
+    end
+    dlg:separator{text='Palette Banks'}
     for n=0,15 do
       dlg:entry{id='name'..n,label=string.format('%02d',n),text=s.properties(BANKS)['name'..n] or '',
         onchange=function()
