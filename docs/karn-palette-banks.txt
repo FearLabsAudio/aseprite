@@ -14,8 +14,10 @@ enable local 4bpp indices for that layer. Bank Name is an optional name shared
 by all layers using that bank.
 
 The PB button to the right of Manual / Auto / Stack opens Palette Banks. Its
-Layers tab lists image layers, tilemaps and groups, with editable names and bank
-assignments, one layer per row. Its Banks tab shows one row per bank: index,
+Layers tab shows the current frame's document palette above the layer list
+(16 colors with Force KARN rules enabled). Image layers, tilemaps and groups
+have editable names and bank assignments, one layer per row.
+Its Banks tab shows one row per bank: index,
 editable name, then color swatches. Names and assignments update immediately
 and remain undoable; close the window with its title-bar close button. The PB button remains available
 when an ordinary indexed layer is selected. Groups/reference layers have no

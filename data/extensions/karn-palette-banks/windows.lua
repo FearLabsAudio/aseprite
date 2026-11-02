@@ -28,13 +28,26 @@ function UI.register(plugin,E,GROUP,BANKS)
     for n=0,15 do options[#options+1]=bankTitle(s,n) end
     local dlg=Dialog{title='Palette Banks',autofit=0}
     local refreshing=false
-    local function colorsForBank(n)
+    local function currentPalette()
       local pal=s.palettes[1]
       for i=1,#s.palettes do
         if s.palettes[i].frame.frameNumber<=app.frame.frameNumber then pal=s.palettes[i] end
       end
+      return pal
+    end
+    local function colorsForBank(n)
+      local pal=currentPalette()
       local colors={}
       for j=0,15 do colors[#colors+1]=(n*16+j<#pal) and pal:getColor(n*16+j) or Color(0,0,0) end
+      return colors
+    end
+    local function documentColors(row)
+      local pal=currentPalette()
+      local count=s.properties('karn.rules.v1').enabled==true and 16 or #pal
+      local colors={}
+      for j=row*16,math.min(row*16+15,count-1) do
+        colors[#colors+1]=j<#pal and pal:getColor(j) or Color(0,0,0)
+      end
       return colors
     end
     local function refreshBanks()
@@ -45,10 +58,20 @@ function UI.register(plugin,E,GROUP,BANKS)
         dlg:modify{id='bank'..i,options=options,option=options[l.paletteBank+3]}
       end
       for n=0,15 do dlg:modify{id='colors'..n,colors=colorsForBank(n)} end
+      for row=0,15 do
+        local colors=documentColors(row)
+        dlg:modify{id='documentColors'..row,colors=colors,visible=#colors>0}
+      end
       refreshing=false
       app.refresh()
     end
     dlg:tab{id='layersTab',text='Layers'}
+    dlg:separator{text='Document Palette'}
+    for row=0,15 do
+      local colors=documentColors(row)
+      dlg:shades{id='documentColors'..row,colors=colors,visible=#colors>0}:newrow()
+    end
+    dlg:separator{text='Layers'}
     for i,l in ipairs(layers) do
       dlg:entry{id='layerName'..i,text=l.name,onchange=function()
         if refreshing then return end
