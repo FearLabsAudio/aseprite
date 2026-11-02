@@ -14,6 +14,7 @@
 #include "app/file_selector.h"
 #include "app/modules/palettes.h"
 #include "app/tx.h"
+#include "app/util/palette_edit.h"
 #include "doc/palette.h"
 #include "doc/palette_bank.h"
 #include "ui/alert.h"
@@ -36,8 +37,10 @@ void SetPaletteCommand::onExecute(Context* context)
   ContextWriter writer(context);
   if (writer.document()) {
     Tx tx(writer, "Set Palette");
-    const auto merged = doc::merge_bank_palette(writer.layer(), writer.frame(), *m_palette);
-    writer.document()->getApi(tx).setPalette(writer.sprite(), writer.frame(), &merged);
+    if (writer.layer()) {
+      if (auto* edit = make_palette_edit(writer.layer(), writer.frame(), *m_palette)) tx(edit);
+    }
+    else writer.document()->getApi(tx).setPalette(writer.sprite(), writer.frame(), m_palette);
     tx.commit();
   }
   set_current_palette(writer.document() ? writer.palette() : m_palette, false);

@@ -15,6 +15,7 @@
 #include "doc/color.h"
 #include "doc/palette.h"
 #include "doc/palette_rgb444.h"
+#include "doc/palette_bank.h"
 
 namespace app {
 
@@ -62,6 +63,12 @@ protected:
         doc::snap_rgb444(palette);
         if (palette.countDiff(original, nullptr, nullptr))
           tx(new cmd::SetPalette(sprite, original->frame(), &palette));
+        if (doc::bank_zero_palettes(sprite)) {
+          auto zero = doc::make_bank_palette(sprite, original->frame(), 0);
+          const auto before = zero;
+          doc::snap_rgb444(zero);
+          if (zero != before) tx(new cmd::SetPalette(sprite, original->frame(), &zero, true, true));
+        }
       }
     }
     tx.commit();

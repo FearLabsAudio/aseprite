@@ -234,6 +234,9 @@ int app_main(int argc, char* argv[])
   const auto profile = std::filesystem::temp_directory_path() /
     ("aseprite-crash-tests-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directories(profile);
+  // Fixtures delete documents directly, without the UI's recovery-owned
+  // deferred destruction. Keep the background backup writer out of this suite.
+  { std::ofstream config(profile / "aseprite.ini"); config << "[general]\ndata_recovery = false\n"; }
 #ifdef _WIN32
   _putenv_s("ASEPRITE_USER_FOLDER", profile.string().c_str());
 #else

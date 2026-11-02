@@ -15,6 +15,7 @@
 #include "base/serialization.h"
 #include "doc/palette.h"
 #include "doc/palette_rgb444.h"
+#include "doc/palette_bank.h"
 #include "doc/karn_rules.h"
 #include "doc/layer.h"
 #include <stdexcept>
@@ -25,7 +26,7 @@ namespace app { namespace cmd {
 using namespace doc;
 
 SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
-                       bool constrainChannels)
+                       bool constrainChannels, bool bankZero)
   : WithSprite(sprite)
   , m_frame(frame)
 {
@@ -36,6 +37,36 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
     doc::snap_rgb444(constrained);
   newPalette = &constrained;
   const Palette* curPalette = sprite->palette(frame);
+  if (const auto* stored = bank_zero_palettes(sprite)) m_oldBankZero = *stored;
+  m_newBankZero = m_oldBankZero;
+  if (bankZero || (!m_oldBankZero && (force_karn_rules(sprite) || has_palette_banks(sprite) ||
+                                    initialized_palette_banks(sprite)))) {
+    if (!m_newBankZero) {
+      m_newBankZero.emplace();
+      for (const auto* p : sprite->getPalettes())
+        (*m_newBankZero)[std::to_string(p->frame()+1)] = bank_palette_colors(make_bank_palette(*p, 0));
+    }
+    if (bankZero) {
+      const frame_t key = std::max(curPalette->frame(), make_bank_palette(sprite, frame, 0).frame());
+      (*m_newBankZero)[std::to_string(key+1)] = bank_palette_colors(constrained);
+    }
+  }
+  if (constrain && m_newBankZero) {
+    for (auto& entry : *m_newBankZero) {
+      if (auto* colors = std::get_if<UserData::Vector>(&entry.second)) {
+        for (auto& color : *colors) {
+          if (auto* value = std::get_if<uint32_t>(&color)) *value = doc::snap_rgb444(*value);
+        }
+      }
+    }
+  }
+  m_changeBankZero = !(m_oldBankZero == m_newBankZero);
+  if (!m_changeBankZero) {
+    m_oldBankZero.reset();
+    m_newBankZero.reset();
+  }
+  // A bank-zero edit has no effect on the native document palette.
+  if (bankZero) newPalette = curPalette;
   // Validate before execution, including color edits implanted into an existing
   // undo command (which do not go through Transaction::commit).
   if (doc::force_karn_rules(sprite) &&
@@ -52,7 +83,7 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
   m_from = m_to = -1;
   int diffs = curPalette->countDiff(newPalette, &m_from, &m_to);
   (void)diffs;
-  ASSERT(diffs > 0 || constrain);
+  ASSERT(diffs > 0 || constrain || m_changeBankZero);
 
   if (m_from >= 0 && m_to >= m_from) {
     int oldColors = std::min(m_to + 1, m_oldNColors) - m_from;
@@ -89,6 +120,12 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
 void SetPalette::onExecute()
 {
   Sprite* sprite = this->sprite();
+  if (m_changeBankZero) {
+    auto& properties = sprite->userData().properties(kPaletteBankProperties);
+    if (m_newBankZero) properties["bank0Palettes"] = *m_newBankZero;
+    else properties.erase("bank0Palettes");
+    sprite->incrementVersion();
+  }
   Palette* palette = sprite->palette(m_frame);
   palette->resize(m_newNColors);
 
@@ -104,6 +141,12 @@ void SetPalette::onExecute()
 void SetPalette::onUndo()
 {
   Sprite* sprite = this->sprite();
+  if (m_changeBankZero) {
+    auto& properties = sprite->userData().properties(kPaletteBankProperties);
+    if (m_oldBankZero) properties["bank0Palettes"] = *m_oldBankZero;
+    else properties.erase("bank0Palettes");
+    sprite->incrementVersion();
+  }
   Palette* palette = sprite->palette(m_frame);
   palette->resize(m_oldNColors);
 

@@ -1249,6 +1249,14 @@ void Render::renderCel(Image* dst_image,
   const int bank = bankLayer ? bankLayer->paletteBank() : -1;
   const bool expandBank = bank >= 0 &&
                          (m_applyPaletteBanks || dst_image->pixelFormat() == IMAGE_RGB);
+  std::optional<Palette> independentPalette;
+  if (expandBank && bank == 0 && bank_zero_palettes(bankLayer->sprite()) && pal) {
+    independentPalette.emplace(*pal);
+    const Palette local = make_bank_palette(bankLayer->sprite(), cel ? cel->frame() : m_currentFrame, 0);
+    if (independentPalette->size() < 16) independentPalette->resize(16);
+    for (int i = 1; i < 16; ++i) independentPalette->setEntry(i, local.getEntry(i));
+    pal = &*independentPalette;
+  }
   std::map<tile_index, ImageRef> bankTiles;
 
   if (cel_image->pixelFormat() == IMAGE_TILEMAP) {

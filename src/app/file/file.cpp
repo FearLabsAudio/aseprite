@@ -36,6 +36,7 @@
 #include "dio/detect_format.h"
 #include "doc/algorithm/resize_image.h"
 #include "doc/doc.h"
+#include "doc/palette_bank.h"
 #include "fmt/format.h"
 #include "render/quantization.h"
 #include "render/render.h"
@@ -65,6 +66,7 @@ public:
     , m_newBlend(fop->newBlend())
   {
     ASSERT(m_doc && m_sprite);
+    if (doc::needs_independent_bank_output(m_sprite)) m_spec.setColorMode(doc::ColorMode::RGB);
   }
 
   void setSpecSize(const gfx::Size& fullCanvasSize, const gfx::Size& frameSize)
@@ -953,7 +955,8 @@ void FileOp::operate(IFileOpProgress* progress)
 
       // Create a temporary bitmap
       m_seq.image.reset(
-        Image::create(sprite->pixelFormat(), m_roi.fileCanvasSize().w, m_roi.fileCanvasSize().h));
+        Image::create(doc::needs_independent_bank_output(sprite) ? IMAGE_RGB : sprite->pixelFormat(),
+                      m_roi.fileCanvasSize().w, m_roi.fileCanvasSize().h));
 
       m_seq.progress_offset = 0.0f;
       m_seq.progress_fraction = 1.0f / (double)sprite->totalFrames();

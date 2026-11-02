@@ -13,6 +13,8 @@
 #include "app/cmd/with_sprite.h"
 #include "doc/color.h"
 #include "doc/frame.h"
+#include "doc/user_data.h"
+#include <optional>
 
 #include <vector>
 
@@ -28,7 +30,7 @@ class SetPalette : public Cmd,
                    public WithSprite {
 public:
   SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
-             bool constrainChannels = true);
+             bool constrainChannels = true, bool bankZero = false);
 
 protected:
   void onExecute() override;
@@ -36,7 +38,16 @@ protected:
   void onFireNotifications() override;
   size_t onMemSize() const override
   {
-    return sizeof(*this) + sizeof(doc::color_t) * (m_oldColors.size() + m_newColors.size());
+    size_t size = sizeof(*this) + sizeof(doc::color_t) * (m_oldColors.size() + m_newColors.size());
+    for (const auto* palettes : { &m_oldBankZero, &m_newBankZero }) {
+      if (!*palettes) continue;
+      for (const auto& entry : **palettes) {
+        size += sizeof(entry) + entry.first.size();
+        if (const auto* colors = std::get_if<doc::UserData::Vector>(&entry.second))
+          size += sizeof(doc::UserData::Variant) * colors->size();
+      }
+    }
+    return size;
   }
 
 private:
@@ -48,6 +59,8 @@ private:
   int m_newTransparentIndex;
   std::vector<color_t> m_oldColors;
   std::vector<color_t> m_newColors;
+  std::optional<doc::UserData::Properties> m_oldBankZero, m_newBankZero;
+  bool m_changeBankZero = false;
 };
 
 }} // namespace app::cmd

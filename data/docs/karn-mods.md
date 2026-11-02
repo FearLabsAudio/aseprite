@@ -42,9 +42,11 @@ To replace a preset's colors, select it, choose your new colors or ramp, then cl
 
 Use palette banks to work with several 4bpp palettes in one Indexed document. Both ordinary image layers and tilemap layers can have a bank assignment, using local indices 0-15 with index 0 transparent.
 
-Open Palette Banks with the **PB** button. In Layers, name your layers and choose their banks. In Banks, name each bank and review its colors. Changes apply immediately and can be undone. You can also assign a bank through Layer > Properties.
+Open Palette Banks with the **PB** button. Layers and palettes share one scrollable page. Rename layers, choose their banks, and use **Current** to select the layer you want to work on. **Visible** shows or hides a layer; **Locked** protects it from painting. Below the layers, review the document palette and name each bank. Edits apply immediately and can be undone. You can also assign a bank through Layer > Properties.
 
 Select a layer to paint with and edit its palette in the color bar. Layers assigned to the same bank share its colors. Choose Document Palette to leave a layer unbanked; only numbered banks are included in KARN exports.
+
+Document Palette and Bank 00 have separate colors. Pasting or importing a 16-color palette into one leaves the other unchanged.
 
 A bank that has never been assigned starts NEW. Its first assignment copies the layer's previous palette colors. If a previously used bank has no other layers assigned, choose Copy Colors or Keep Bank when assigning it again. Banks already shared by other layers keep their colors.
 

@@ -36,9 +36,9 @@ function UI.register(plugin,E,GROUP,BANKS)
       return pal
     end
     local function colorsForBank(n)
-      local pal=currentPalette()
+      local pal=s:getPaletteBank(n,app.frame)
       local colors={}
-      for j=0,15 do colors[#colors+1]=(n*16+j<#pal) and pal:getColor(n*16+j) or Color(0,0,0) end
+      for j=0,15 do colors[#colors+1]=pal:getColor(j) end
       return colors
     end
     local function documentColors(row)
@@ -56,6 +56,9 @@ function UI.register(plugin,E,GROUP,BANKS)
       for n=0,15 do options[#options+1]=bankTitle(s,n) end
       for i,l in ipairs(layers) do
         dlg:modify{id='bank'..i,options=options,option=options[l.paletteBank+3]}
+        dlg:modify{id='current'..i,selected=app.layer==l}
+        dlg:modify{id='visible'..i,selected=l.isVisible}
+        dlg:modify{id='locked'..i,selected=not l.isEditable}
       end
       for n=0,15 do dlg:modify{id='colors'..n,colors=colorsForBank(n)} end
       for row=0,15 do
@@ -65,9 +68,15 @@ function UI.register(plugin,E,GROUP,BANKS)
       refreshing=false
       app.refresh()
     end
-    dlg:tab{id='layersTab',text='Layers'}
+    dlg:separator{text='Layers'}
     for i,l in ipairs(layers) do
-      dlg:entry{id='layerName'..i,text=l.name,onchange=function()
+      dlg:radio{id='current'..i,text='Current',selected=app.layer==l,hexpand=false,
+        onclick=function()
+          if refreshing then return end
+          attempt(function() app.layer=l end)
+          refreshBanks()
+        end}
+      dlg:samerow():entry{id='layerName'..i,text=l.name,onchange=function()
         if refreshing then return end
         attempt(function()
           local name=dlg.data['layerName'..i]
@@ -91,9 +100,30 @@ function UI.register(plugin,E,GROUP,BANKS)
           end)
           -- Also restore the current assignment if validation rejected the edit.
           refreshBanks()
+        end}
+      dlg:samerow():check{id='visible'..i,text='Visible',selected=l.isVisible,hexpand=false,
+        onclick=function()
+          if refreshing then return end
+          attempt(function()
+            local visible=dlg.data['visible'..i]
+            if visible~=l.isVisible then
+              app.transaction('Change layer visibility',function() l.isVisible=visible end)
+            end
+          end)
+          refreshBanks()
+        end}
+      dlg:samerow():check{id='locked'..i,text='Locked',selected=not l.isEditable,hexpand=false,
+        onclick=function()
+          if refreshing then return end
+          attempt(function()
+            local editable=not dlg.data['locked'..i]
+            if editable~=l.isEditable then
+              app.transaction('Change layer lock',function() l.isEditable=editable end)
+            end
+          end)
+          refreshBanks()
         end}:newrow()
     end
-    dlg:tab{id='banksTab',text='Banks'}
     dlg:separator{text='Document Palette'}
     for row=0,15 do
       local colors=documentColors(row)
@@ -114,7 +144,6 @@ function UI.register(plugin,E,GROUP,BANKS)
         end}
       dlg:samerow():shades{id='colors'..n,colors=colorsForBank(n)}:newrow()
     end
-    dlg:endtabs{selected='layersTab'}
     layout.show(dlg,plugin,'banks')
   end
 

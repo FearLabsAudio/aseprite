@@ -11,6 +11,7 @@
 
 #include "app/app.h"
 #include "app/cmd/set_palette.h"
+#include "app/util/palette_edit.h"
 #include "app/commands/new_params.h"
 #include "app/console.h"
 #include "app/context.h"
@@ -205,9 +206,7 @@ void ColorQuantizationCommand::onExecute(Context* ctx)
         ++i;
       }
 
-      const Palette merged = doc::merge_bank_palette(site.layer(), frame, *newPalette);
-      if (*curPalette != merged)
-        tx(new cmd::SetPalette(sprite, frame, &merged));
+      if (auto* edit = make_palette_edit(site.layer(), frame, *newPalette)) tx(edit);
     });
     job.waitJob();
     if (job.isCanceled())

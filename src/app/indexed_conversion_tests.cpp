@@ -3,6 +3,10 @@
 #include "config.h"
 #endif
 #include <gtest/gtest.h>
+#include <ctime>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include "app/util/indexed_conversion.h"
 #include "app/util/palette_bank.h"
 #include "app/cli/app_options.h"
@@ -23,10 +27,19 @@
 #include "doc/palette_bank.h"
 #include "doc/primitives.h"
 #include "render/task_delegate.h"
+#include "render/render.h"
 
 using namespace doc;
 using namespace app;
 static const char* g_exeName;
+
+static void disable_test_update_check()
+{
+  // app.run(false) still starts the updater in GUI tests. Keep these tests
+  // offline and avoid racing a newly started HTTP request during teardown.
+  Preferences::instance().updater.waitDays(365);
+  Preferences::instance().updater.lastCheck(std::time(nullptr)-60);
+}
 
 TEST(IndexedConversion, DitheringUsesOnlyTheDestinationBank)
 {
@@ -157,6 +170,8 @@ TEST(IndexedConversion, BankChangeConvertsAllFramesAndUndoesAsOneEdit)
   app.run(false);
 }
 
+static void check_document_palette_paste();
+
 TEST(IndexedConversion, BankPaletteUIAndReuse)
 {
   os::SystemRef system = os::System::make();
@@ -165,6 +180,7 @@ TEST(IndexedConversion, BankPaletteUIAndReuse)
   App app;
   app.initialize(arguments);
   Preferences::instance().experimental.useNativeClipboard(false);
+  disable_test_update_check();
   auto* context = UIContext::instance();
   auto* document = context->documents().add(8, 8, ColorMode::INDEXED);
   context->setActiveDocument(document);
@@ -262,11 +278,94 @@ TEST(IndexedConversion, BankPaletteUIAndReuse)
   EXPECT_EQ(16, get_current_palette()->size());
   document->close();
   delete document;
+  check_document_palette_paste();
   app.run(false);
+}
+
+static void check_document_palette_paste()
+{
+  auto* context = UIContext::instance();
+  auto* document = context->documents().add(8, 8, ColorMode::INDEXED);
+  context->setActiveDocument(document);
+  auto* sprite = document->sprite();
+  auto* unbanked = sprite->firstLayer();
+  auto* zero = new LayerImage(sprite);
+  auto* one = new LayerImage(sprite);
+  sprite->root()->addLayer(zero);
+  sprite->root()->addLayer(one);
+  // Simulate an older file whose bank 00 still aliases document slots 0-15.
+  zero->userData().properties(kPaletteBankProperties)["bank"] = int8_t(0);
+  one->userData().properties(kPaletteBankProperties)["bank"] = int8_t(1);
+  for (int i = 0; i < 256; ++i)
+    sprite->palette(0)->setEntry(i, rgba(i%16*17, i/16*17, 68, 255));
+  sprite->setTotalFrames(2);
+  Palette later(*sprite->palette(0));
+  later.setFrame(1);
+  later.setEntry(3, rgba(0, 255, 0, 255));
+  sprite->setPalette(&later, true);
+  const Palette laterZero(*zero->palette(1));
+  Params force;
+  force.set("enabled", "true"); force.set("ui", "false");
+  context->executeCommand(Commands::instance()->byId("ForceKarnRules"), force);
+  const Palette zeroBefore(*zero->palette(0));
+  const Palette source(*one->palette(0));
+  const Palette documentBefore(*unbanked->palette(0));
+  auto* view = ColorBar::instance()->getPaletteView();
+  context->setActiveLayer(one);
+  view->selectRange(0, 15);
+  view->copyToClipboard();
+  context->setActiveLayer(unbanked);
+  view->selectRange(0, 15);
+  view->pasteFromClipboard();
+  EXPECT_EQ(source, *unbanked->palette(0));
+  EXPECT_EQ(zeroBefore, *zero->palette(0));
+  EXPECT_EQ(source, *one->palette(0));
+  EXPECT_EQ(laterZero, *zero->palette(1));
+  document->undoHistory()->undo();
+  EXPECT_EQ(documentBefore, *unbanked->palette(0));
+  EXPECT_EQ(zeroBefore, *zero->palette(0));
+  document->undoHistory()->redo();
+  EXPECT_EQ(source, *unbanked->palette(0));
+  EXPECT_EQ(zeroBefore, *zero->palette(0));
+  context->setActiveLayer(zero);
+  view->selectRange(0, 15);
+  view->pasteFromClipboard();
+  EXPECT_EQ(source, *zero->palette(0));
+  EXPECT_EQ(source, *unbanked->palette(0));
+  const Palette masterBefore(*sprite->palette(0));
+  Palette changed(*zero->palette(0));
+  changed.setEntry(3, rgba(255, 0, 255, 255));
+  view->delegate()->onPaletteViewModification(&changed, PaletteViewModification::CLEAR);
+  EXPECT_EQ(changed, *zero->palette(0));
+  EXPECT_EQ(masterBefore, *sprite->palette(0));
+  EXPECT_EQ(laterZero, *zero->palette(1));
+  document->undoHistory()->undo();
+  EXPECT_EQ(source, *zero->palette(0));
+  document->undoHistory()->redo();
+  EXPECT_EQ(changed, *zero->palette(0));
+  EXPECT_EQ(masterBefore, *sprite->palette(0));
+  ImageRef pixels(Image::create(IMAGE_INDEXED, 1, 1)); pixels->clear(3);
+  zero->addCel(new Cel(0, pixels));
+  ImageRef preview(Image::create(IMAGE_RGB, 8, 8));
+  render::Render().renderSprite(preview.get(), sprite, 0);
+  EXPECT_EQ(changed.getEntry(3), preview->getPixel(0, 0));
+  document->close();
+  delete document;
 }
 
 int app_main(int argc, char* argv[])
 {
+  // These fixtures directly create/delete documents instead of following the
+  // UI's deferred recovery-owned destruction. Do not back them up in parallel.
+  const auto profile = std::filesystem::temp_directory_path() /
+    ("aseprite-palette-tests-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(profile);
+  { std::ofstream config(profile / "aseprite.ini"); config << "[general]\ndata_recovery = false\n"; }
+#ifdef _WIN32
+  _putenv_s("ASEPRITE_USER_FOLDER", profile.string().c_str());
+#else
+  setenv("ASEPRITE_USER_FOLDER", profile.string().c_str(), 1);
+#endif
   Palette::initBestfit();
   g_exeName = argv[0];
   ::testing::InitGoogleTest(&argc, argv);

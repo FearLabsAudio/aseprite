@@ -235,7 +235,7 @@ void ShaderRenderer::renderPlan(SkCanvas* canvas,
     const Layer* layer = item.layer;
     Palette layerPalette(m_palette);
     if (layer->paletteBank() >= 0) {
-      layerPalette = make_bank_palette(*sprite->palette(frame), layer->paletteBank());
+      layerPalette = make_bank_palette(sprite, frame, layer->paletteBank());
       layerPalette.resize(256, 0);
     }
     base::ScopedValue paletteScope(m_palette, layerPalette);

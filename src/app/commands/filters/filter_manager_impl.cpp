@@ -15,6 +15,7 @@
 #include "app/cmd/copy_region.h"
 #include "app/cmd/patch_cel.h"
 #include "app/cmd/set_palette.h"
+#include "app/util/palette_edit.h"
 #include "app/cmd/unlink_cel.h"
 #include "app/context_access.h"
 #include "app/doc.h"
@@ -296,9 +297,9 @@ void FilterManagerImpl::applyToTarget()
 
   // Palette change
   if (paletteChange) {
-    Palette newPalette = doc::merge_bank_palette(m_site.layer(), m_site.frame(), *getNewPalette());
+    Palette newPalette(*getNewPalette());
     restoreSpritePalette();
-    (*m_tx)(new cmd::SetPalette(m_site.sprite(), m_site.frame(), &newPalette));
+    if (auto* edit = make_palette_edit(m_site.layer(), m_site.frame(), newPalette)) (*m_tx)(edit);
   }
 
   // For each target image

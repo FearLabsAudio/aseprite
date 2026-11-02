@@ -314,7 +314,11 @@ Cel* create_cel_copy(CmdSequence* cmds,
   ImageRef expandedSource;
   if (srcImage && srcImage->pixelFormat() == IMAGE_INDEXED &&
       srcCel->layer()->paletteBank() >= 0 && dstLayer->paletteBank() < 0) {
-    expandedSource = doc::expand_bank_image(srcImage, srcCel->layer()->paletteBank());
+    if (srcCel->layer()->paletteBank() == 0 && doc::bank_zero_palettes(srcCel->sprite())) {
+      expandedSource.reset(render::convert_pixel_format(srcImage, nullptr, IMAGE_RGB,
+        render::Dithering(), nullptr, srcCel->layer()->palette(srcCel->frame()), false, 0));
+    }
+    else expandedSource = doc::expand_bank_image(srcImage, srcCel->layer()->paletteBank());
     srcImage = expandedSource.get();
   }
   if (srcImage) {

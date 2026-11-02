@@ -9,6 +9,8 @@
 #include "doc/sprite.h"
 #include "doc/tileset.h"
 #include "doc/karn_rules.h"
+#include <charconv>
+#include <optional>
 
 namespace doc {
 
@@ -110,6 +112,63 @@ inline Palette make_bank_palette(const Palette& source, int bank)
   for (int i = 1; i < 16; ++i)
     result.setEntry(i, source.getEntry(bank_global_index(bank, i)));
   return result;
+}
+
+// Bank zero used to alias the document's first sixteen colors. Keep its
+// independent, frame-specific colors in native sprite user data. Missing data
+// deliberately uses the old colors so existing files keep their appearance.
+inline const UserData::Properties* bank_zero_palettes(const Sprite* sprite)
+{
+  const auto& maps = sprite->userData().propertiesMaps();
+  const auto group = maps.find(kPaletteBankProperties);
+  if (group == maps.end()) return nullptr;
+  const auto it = group->second.find("bank0Palettes");
+  return it == group->second.end() ? nullptr : std::get_if<UserData::Properties>(&it->second);
+}
+
+inline Palette make_bank_palette(const Sprite* sprite, frame_t frame, int bank)
+{
+  const auto* source = sprite->palette(frame);
+  Palette result = make_bank_palette(*source, bank);
+  if (bank != 0) return result;
+  const auto* palettes = bank_zero_palettes(sprite);
+  if (!palettes) return result;
+  int latest = 0;
+  const UserData::Vector* colors = nullptr;
+  for (const auto& entry : *palettes) {
+    int at = 0;
+    const auto parsed = std::from_chars(entry.first.data(), entry.first.data()+entry.first.size(), at);
+    if (parsed.ec != std::errc() || parsed.ptr != entry.first.data()+entry.first.size() ||
+        at <= latest || at > frame+1) continue;
+    const auto* candidate = std::get_if<UserData::Vector>(&entry.second);
+    if (candidate && candidate->size() == 16) { latest = at; colors = candidate; }
+  }
+  if (colors) {
+    result.setFrame(latest-1);
+    for (int i = 1; i < 16; ++i) {
+      std::visit([&](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+          if (value >= 0 && uint64_t(value) <= UINT32_MAX) result.setEntry(i, color_t(value));
+      }, static_cast<const UserData::VariantBase&>((*colors)[i]));
+    }
+  }
+  return result;
+}
+
+inline UserData::Vector bank_palette_colors(const Palette& palette)
+{
+  UserData::Vector colors;
+  for (int i = 0; i < 16; ++i) colors.emplace_back(uint32_t(i ? palette.getEntry(i) : 0));
+  return colors;
+}
+
+inline bool needs_independent_bank_output(const Sprite* sprite)
+{
+  if (!bank_zero_palettes(sprite)) return false;
+  for (const auto* layer : sprite->allLayers())
+    if (layer->paletteBank() == 0) return true;
+  return false;
 }
 
 // Merge a local palette edit without changing any other bank or its reserved slot.

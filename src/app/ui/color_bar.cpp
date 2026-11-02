@@ -15,6 +15,7 @@
 #include "doc/palette_rgb444.h"
 
 #include "app/ui/color_bar.h"
+#include "app/util/palette_edit.h"
 
 #include "app/app.h"
 #include "app/app_menus.h"
@@ -1124,15 +1125,11 @@ void ColorBar::setPalette(const doc::Palette* newPalette, const std::string& act
   try {
     InlineCommandExecution inlineCmd(UIContext::instance());
     ContextWriter writer(UIContext::instance(), 500);
-    Sprite* sprite = writer.sprite();
     frame_t frame = writer.frame();
-    Palette merged = doc::merge_bank_palette(writer.layer(), frame, *newPalette);
-    if (sprite && sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-      doc::snap_rgb444(merged);
-    newPalette = &merged;
-    if (sprite && newPalette->countDiff(sprite->palette(frame), nullptr, nullptr)) {
+    std::unique_ptr<cmd::SetPalette> edit(make_palette_edit(writer.layer(), frame, *newPalette));
+    if (edit) {
       Tx tx(writer, actionText, ModifyDocument);
-      tx(new cmd::SetPalette(sprite, frame, newPalette));
+      tx(edit.release());
       tx.commit();
     }
   }
@@ -1889,23 +1886,11 @@ void ColorBar::updateCurrentSpritePalette(const char* operationName)
       InlineCommandExecution inlineCmd(UIContext::instance());
       ContextWriter writer(UIContext::instance());
       Doc* document(writer.document());
-      Sprite* sprite(writer.sprite());
       Palette* newPalette = get_current_palette(); // System current pal
       frame_t frame = writer.frame();
-      Palette merged = doc::merge_bank_palette(writer.layer(), frame, *newPalette);
-      if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-        doc::snap_rgb444(merged);
-      newPalette = &merged;
-      Palette* currentSpritePalette = sprite->palette(frame); // Sprite current pal
-      int from, to;
-
-      // Check differences between current sprite palette and current system palette
-      from = to = -1;
-      currentSpritePalette->countDiff(newPalette, &from, &to);
-
-      if (from >= 0 && to >= from) {
+      std::unique_ptr<cmd::SetPalette> cmd(make_palette_edit(writer.layer(), frame, *newPalette));
+      if (cmd) {
         DocUndo* undo = document->undoHistory();
-        std::unique_ptr<cmd::SetPalette> cmd(new cmd::SetPalette(sprite, frame, newPalette));
 
         // Add undo information to save the range of pal entries that will be modified.
         if (m_implantChange && undo->lastExecutedCmd() &&

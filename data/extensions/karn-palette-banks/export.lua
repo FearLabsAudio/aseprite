@@ -104,7 +104,7 @@ local function compositePixels(destination,source)
     if index~=0 then destination:putPixel(pixel.x,pixel.y,index) end
   end
 end
-local function bmp(image,pal,bank,width,height)
+local function bmp(image,pal,bank,width,height,bankPalette)
   local stride=((width+1)//2+3)&~3
   local size=stride*height
   local data={'BM',string.pack('<I4I2I2I4',118+size,0,0,118),
@@ -113,7 +113,7 @@ local function bmp(image,pal,bank,width,height)
   for i=0,15 do
     local at=bank*16+i
     assert(at<#pal,'Palette bank '..bank..' is incomplete.')
-    local c=pal:getColor(at)
+    local c=bank==0 and bankPalette:getColor(i) or pal:getColor(at)
     data[#data+1]=string.char(c.blue,c.green,c.red,0)
     if c.red%17~=0 or c.green%17~=0 or c.blue%17~=0 then rounded=true end
   end
@@ -207,7 +207,8 @@ function M.prepare(s,options)
         assert(not cel or cel.opacity==255,'Use 100% cel opacity on '..l.name)
       end
       local localImage=l:renderLocal(frame)
-      local bytes,reserved,rounded,occupied=bmp(localImage,palette(s,frame),l.paletteBank,width,height)
+      local bytes,reserved,rounded,occupied=bmp(localImage,palette(s,frame),l.paletteBank,width,height,
+        s:getPaletteBank(l.paletteBank,frame))
       local bmpPath=M.absolute(shared[l.id] and shared[l.id].bmp or row.bmp)
       if plan.mergeByBank then
         local bank=l.paletteBank

@@ -343,7 +343,8 @@ public:
       return m_image;
 
     ImageRef render(
-      Image::create(m_sprite->pixelFormat(), m_trimmedBounds.w, m_trimmedBounds.h, imageBuf));
+      Image::create(needs_independent_bank_output(m_sprite) ? IMAGE_RGB : m_sprite->pixelFormat(),
+                    m_trimmedBounds.w, m_trimmedBounds.h, imageBuf));
     render->setMaskColor(m_sprite->transparentColor());
     clear_image(render.get(), m_sprite->transparentColor());
     renderSample(render.get(), 0, 0, false);
@@ -983,8 +984,13 @@ int DocExporter::addTilesetsSamples(Doc* doc, const doc::SelectedLayers* selLaye
 
       if (alreadyExported.find(key) == alreadyExported.end()) {
         for (const auto& tile : *ts) {
-          addImage(doc, layer->paletteBank() >= 0 && tile.image ?
-                          expand_bank_image(tile.image.get(), layer->paletteBank()) : tile.image);
+          if (layer->paletteBank() == 0 && tile.image && bank_zero_palettes(doc->sprite())) {
+            ImageRef rgb(render::convert_pixel_format(tile.image.get(), nullptr, IMAGE_RGB,
+              render::Dithering(), nullptr, layer->palette(0), false, 0));
+            addImage(doc, rgb);
+          }
+          else addImage(doc, layer->paletteBank() >= 0 && tile.image ?
+                               expand_bank_image(tile.image.get(), layer->paletteBank()) : tile.image);
           ++items;
         }
         alreadyExported.insert(key);
@@ -1338,7 +1344,8 @@ Doc* DocExporter::createEmptyTexture(const Samples& samples, base::task_token& t
     // two or more palettes, or two of the sprites have different
     // palettes, we've to use RGB format.
     if (colorMode == ColorMode::INDEXED) {
-      if (sample.sprite()->colorMode() != ColorMode::INDEXED) {
+      if (sample.sprite()->colorMode() != ColorMode::INDEXED ||
+          needs_independent_bank_output(sample.sprite())) {
         colorMode = ColorMode::RGB;
       }
       else if (sample.sprite()->getPalettes().size() > 1) {

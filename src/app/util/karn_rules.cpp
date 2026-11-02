@@ -96,6 +96,10 @@ std::string karn_rules_violation(const Sprite* s, const KarnImageVersions& uncha
     for (int i = 0; i < p->size(); ++i)
       if (snap_rgb444(p->getEntry(i)) != p->getEntry(i))
         return "KARN rules require 4-bit color channels.";
+    const auto zero = make_bank_palette(s, p->frame(), 0);
+    for (int i = 0; i < 16; ++i)
+      if (snap_rgb444(zero.getEntry(i)) != zero.getEntry(i))
+        return "KARN rules require 4-bit color channels.";
   }
   for (const auto* l : s->allTilemaps()) {
     const auto* ts = l->tileset();
@@ -153,6 +157,12 @@ void apply_karn_rules(Tx& tx, Sprite* s)
     snap_rgb444(palette);
     if (palette.countDiff(p, nullptr, nullptr))
       tx(new cmd::SetPalette(s, p->frame(), &palette));
+    if (bank_zero_palettes(s)) {
+      auto zero = make_bank_palette(s, p->frame(), 0);
+      const auto before = zero;
+      snap_rgb444(zero);
+      if (zero != before) tx(new cmd::SetPalette(s, p->frame(), &zero, true, true));
+    }
   }
   const int oldMask = s->transparentColor();
   std::set<ObjectId> normalized;

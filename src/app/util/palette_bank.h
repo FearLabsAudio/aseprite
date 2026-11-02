@@ -30,9 +30,10 @@ inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc
 {
   const auto* palette = layer->sprite()->palette(frame);
   if (inherit_bank_colors(layer, bank, options))
-    return doc::make_bank_palette(*palette, std::max(0, layer->paletteBank()));
-  return (bank >= 0 || doc::force_karn_rules(layer->sprite()) ?
-    doc::make_bank_palette(*palette, palette->size() <= 16 ? 0 : std::max(0, bank)) : *palette);
+    return layer->paletteBank() >= 0 ? doc::make_bank_palette(layer->sprite(), frame, layer->paletteBank()) :
+                                       doc::make_bank_palette(*palette, 0);
+  if (bank >= 0) return doc::make_bank_palette(layer->sprite(), frame, bank);
+  return doc::force_karn_rules(layer->sprite()) ? doc::make_bank_palette(*palette, 0) : *palette;
 }
 
 inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
@@ -90,9 +91,17 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
       if (original->size() < (bank + 1) * 16)
         expanded.resize((bank + 1) * 16);
       if (inherit) {
-        const auto previous = doc::make_bank_palette(*original, std::max(0, layer->paletteBank()));
-        for (int i = 1; i < 16; ++i)
-          expanded.setEntry(doc::bank_global_index(bank, i), previous.getEntry(i));
+        const auto previous = layer->paletteBank() >= 0 ?
+          doc::make_bank_palette(layer->sprite(), original->frame(), layer->paletteBank()) :
+          doc::make_bank_palette(*original, 0);
+        if (bank == 0) {
+          if (!doc::bank_zero_palettes(layer->sprite()) ||
+              doc::make_bank_palette(layer->sprite(), original->frame(), 0) != previous)
+            tx(new cmd::SetPalette(layer->sprite(), original->frame(), &previous, true, true));
+        }
+        else
+          for (int i = 1; i < 16; ++i)
+            expanded.setEntry(doc::bank_global_index(bank, i), previous.getEntry(i));
       }
       if (expanded != *original)
         tx(new cmd::SetPalette(layer->sprite(), original->frame(), &expanded));

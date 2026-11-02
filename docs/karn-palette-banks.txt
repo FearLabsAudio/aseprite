@@ -13,12 +13,14 @@ which retains Aseprite's original behavior. Select Bank 0 through Bank 15 to
 enable local 4bpp indices for that layer. Bank Name is an optional name shared
 by all layers using that bank.
 
-The PB button to the right of Manual / Auto / Stack opens Palette Banks. Its
-Layers tab lists image layers, tilemaps and groups, with editable names and bank
-assignments, one layer per row. Its Banks tab shows the current frame's document
-palette first (16 colors with Force KARN rules enabled), followed by one row per
-numbered bank: index, editable name, then color swatches. Names and assignments update immediately
-and remain undoable; close the window with its title-bar close button. The PB button remains available
+The PB button to the right of Manual / Auto / Stack opens Palette Banks, with
+layers and palettes on one scrollable page. Each layer row has a Current selector,
+editable name, bank assignment, and Visible and Locked checkboxes. Current selects
+the active layer; visibility and lock changes apply immediately and are undoable.
+Below the layers is the current frame's document palette (16 colors with Force
+KARN rules enabled), followed by one row per numbered bank: index, editable name,
+then color swatches. Names and assignments update immediately and remain undoable;
+close the window with its title-bar close button. The PB button remains available
 when an ordinary indexed layer is selected. Groups/reference layers have no
 bank; convert background layers into ordinary layers before assigning a bank.
 
@@ -36,8 +38,13 @@ samples the active banked layer's local slots. Indexed image brushes must also
 use local slots. Multiple banked layers can share the same tileset and display
 it using different banks. Editing shared tiles affects every layer using them.
 
-Colors are stored in the ordinary document palette. Local slot i (1–15) in
-bank b uses master palette entry 16*b+i. Slot zero stays transparent; reserved
+Bank 00 has its own saved colors, independent of Document Palette. Older KARN
+files retain their existing bank-00 colors when the first palette edit separates
+them. The extra colors are saved in sprite user data, including frame palettes,
+and participate in undo/redo. Standard composed exports use RGB when required
+to preserve both palettes; KARN BMP exports still use exact local 4bpp indices.
+For banks 01–15, local slot i (1–15) uses master palette entry 16*b+i.
+Slot zero stays transparent; reserved
 entries 16, 32, etc. are not painted by banked layers. Selecting an ordinary
 layer shows the master palette. Loading a palette while a banked layer is
 active imports its slots 1–15 into that bank only. Copy selected palette colors,

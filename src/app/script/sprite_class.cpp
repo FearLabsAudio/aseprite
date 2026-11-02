@@ -48,6 +48,7 @@
 #include "app/script/luacpp.h"
 #include "app/script/security.h"
 #include "app/script/userdata.h"
+#include "doc/palette_bank.h"
 #include "app/site.h"
 #include "app/transaction.h"
 #include "app/tx.h"
@@ -1089,6 +1090,17 @@ int Sprite_get_undoHistory(lua_State* L)
   return 1;
 }
 
+int Sprite_getPaletteBank(lua_State* L)
+{
+  auto* sprite = get_docobj<Sprite>(L, 1);
+  const int bank = luaL_checkinteger(L, 2);
+  if (bank < 0 || bank > 15) return luaL_error(L, "Palette bank must be 0-15");
+  const frame_t frame = lua_isnoneornil(L, 3) ? 0 : get_frame_number_from_arg(L, 3);
+  if (frame < 0 || frame >= sprite->totalFrames()) return luaL_error(L, "Frame is outside the sprite");
+  push_palette(L, new Palette(doc::make_bank_palette(sprite, frame, bank)));
+  return 1;
+}
+
 int Sprite_get_isValid(lua_State* L)
 {
   lua_pushboolean(L, may_get_docobj<Sprite>(L, 1) ? true : false);
@@ -1104,6 +1116,7 @@ const luaL_Reg Sprite_methods[] = {
   { "close",             Sprite_close             },
   { "loadPalette",       Sprite_loadPalette       },
   { "setPalette",        Sprite_setPalette        },
+  { "getPaletteBank",    Sprite_getPaletteBank    },
   { "assignColorSpace",  Sprite_assignColorSpace  },
   { "convertColorSpace", Sprite_convertColorSpace },
   { "flatten",           Sprite_flatten           },
