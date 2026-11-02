@@ -273,37 +273,47 @@ int Sprite_close(lua_State* L)
 
 int Sprite_loadPalette(lua_State* L)
 {
-  auto sprite = get_docobj<Sprite>(L, 1);
-  const char* fn = luaL_checkstring(L, 2);
-  if (fn && sprite) {
-    std::string absFn = base::get_absolute_path(fn);
-    if (!ask_access(L, absFn.c_str(), FileAccessMode::Read, ResourceType::File))
-      return luaL_error(L, "script doesn't have access to open file %s", absFn.c_str());
+  try {
+    auto sprite = get_docobj<Sprite>(L, 1);
+    const char* fn = luaL_checkstring(L, 2);
+    if (fn && sprite) {
+      std::string absFn = base::get_absolute_path(fn);
+      if (!ask_access(L, absFn.c_str(), FileAccessMode::Read, ResourceType::File))
+        return luaL_error(L, "script doesn't have access to open file %s", absFn.c_str());
 
-    Doc* doc = static_cast<Doc*>(sprite->document());
-    std::unique_ptr<doc::Palette> palette(load_palette(absFn.c_str()));
-    if (palette) {
-      Tx tx(doc);
-      // TODO Merge this with the code in LoadPaletteCommand
-      doc->getApi(tx).setPalette(sprite, 0, palette.get());
-      tx.commit();
+      Doc* doc = static_cast<Doc*>(sprite->document());
+      std::unique_ptr<doc::Palette> palette(load_palette(absFn.c_str()));
+      if (palette) {
+        Tx tx(doc);
+        // TODO Merge this with the code in LoadPaletteCommand
+        doc->getApi(tx).setPalette(sprite, 0, palette.get());
+        tx.commit();
+      }
     }
+    return 0;
   }
-  return 0;
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
+  }
 }
 
 int Sprite_setPalette(lua_State* L)
 {
-  auto sprite = get_docobj<Sprite>(L, 1);
-  auto pal = get_palette_from_arg(L, 2);
-  if (sprite && pal) {
-    Doc* doc = static_cast<Doc*>(sprite->document());
+  try {
+    auto sprite = get_docobj<Sprite>(L, 1);
+    auto pal = get_palette_from_arg(L, 2);
+    if (sprite && pal) {
+      Doc* doc = static_cast<Doc*>(sprite->document());
 
-    Tx tx(doc);
-    doc->getApi(tx).setPalette(sprite, 0, pal);
-    tx.commit();
+      Tx tx(doc);
+      doc->getApi(tx).setPalette(sprite, 0, pal);
+      tx.commit();
+    }
+    return 0;
   }
-  return 0;
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
+  }
 }
 
 int Sprite_assignColorSpace(lua_State* L)

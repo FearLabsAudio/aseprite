@@ -117,8 +117,7 @@ void Transaction::commit()
     ASSERT(m_doc);
     ASSERT(m_doc->sprite());
 
-    Palette* pal = m_doc->sprite()->palette(sprPos.frame());
-    ASSERT(pal);
+    Palette* pal = m_ctx ? m_ctx->activeSite().palette() : nullptr;
     if (pal)
       set_current_palette(pal, false);
     else

@@ -19,6 +19,7 @@ struct IndexedConversionOptions {
   render::Dithering dithering;
   doc::RgbMapAlgorithm mapping = doc::RgbMapAlgorithm::DEFAULT;
   doc::FitCriteria fit = doc::FitCriteria::DEFAULT;
+  bool copyBankColors = false;
 };
 
 inline doc::ImageRef convert_to_indexed(const doc::Image* source,

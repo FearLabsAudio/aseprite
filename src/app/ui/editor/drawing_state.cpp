@@ -14,6 +14,7 @@
 #include "app/commands/command.h"
 #include "app/commands/commands.h"
 #include "app/commands/params.h"
+#include "app/console.h"
 #include "app/tools/controller.h"
 #include "app/tools/ink.h"
 #include "app/tools/tool.h"
@@ -431,11 +432,40 @@ void DrawingState::destroyLoop(Editor* editor)
   if (editor)
     editor->renderEngine().removePreviewImage();
 
-  if (m_toolLoopManager)
-    m_toolLoopManager->end();
+  // Detach first: a rejected commit must never be attempted again by our
+  // destructor or a nested event while the error is being displayed.
+  auto manager = std::move(m_toolLoopManager);
+  auto loop = std::move(m_toolLoop);
+  std::exception_ptr error;
+  try {
+    if (manager)
+      manager->end();
+  }
+  catch (...) {
+    error = std::current_exception();
+  }
+  manager.reset();
+  // Destroying the loop also rolls back its uncommitted Tx and releases locks.
+  loop.reset();
 
-  m_toolLoopManager.reset(nullptr);
-  m_toolLoop.reset(nullptr);
+  if (error) {
+    if (editor)
+      editor->releaseMouse();
+    // Report after the caller returns to standby, not while its drawing state
+    // has already released the loop but can still receive cursor/paint events.
+    ui::execute_from_ui_thread([error] {
+      try {
+        std::rethrow_exception(error);
+      }
+      catch (const std::exception& e) {
+        Console::showException(e);
+      }
+      catch (...) {
+        Console console;
+        console.printf("The stroke could not be completed and was canceled.");
+      }
+    });
+  }
 
   app_rebuild_documents_tabs();
 }

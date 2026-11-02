@@ -366,7 +366,7 @@ private:
         m_doc->generateMaskBoundaries();
 
         // TODO this should be an observer of the current document palette
-        set_current_palette(m_doc->sprite()->palette(m_frame), false);
+        set_current_palette(m_ctx->activeSite().palette(), false);
 
         m_doc->notifyGeneralUpdate();
         m_actions.invalidate();

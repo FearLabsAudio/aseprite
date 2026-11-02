@@ -22,6 +22,7 @@
 #include "app/ui/color_bar.h"
 #include "app/ui/rgbmap_algorithm_selector.h"
 #include "doc/palette.h"
+#include "doc/palette_bank.h"
 #include "doc/sprite.h"
 #include "render/quantization.h"
 #include "ui/manager.h"
@@ -89,13 +90,16 @@ void ColorQuantizationCommand::onExecute(Context* ctx)
   bool createPal;
 
   Site site = ctx->activeSite();
+  const bool local = doc::uses_local_palette(site.layer()) || doc::force_karn_rules(site.sprite());
+  if (local)
+    maxColors = std::min(16, maxColors);
   PalettePicks entries = site.selectedColors();
 
   if (ui) {
     PaletteFromSpriteWindow window;
     {
       ContextReader reader(ctx);
-      const Palette* curPalette = site.sprite()->palette(site.frame());
+      const Palette* curPalette = site.palette();
 
       if (!params().algorithm.isSet())
         algorithm = pref.quantization.rgbmapAlgorithm();
@@ -150,6 +154,8 @@ void ColorQuantizationCommand::onExecute(Context* ctx)
   }
 
   if (createPal) {
+    if (local)
+      maxColors = std::clamp(maxColors, 1, 16);
     entries = PalettePicks(std::max(1, maxColors));
     entries.all();
   }
@@ -199,14 +205,15 @@ void ColorQuantizationCommand::onExecute(Context* ctx)
         ++i;
       }
 
-      if (*curPalette != *newPalette)
-        tx(new cmd::SetPalette(sprite, frame, newPalette.get()));
+      const Palette merged = doc::merge_bank_palette(site.layer(), frame, *newPalette);
+      if (*curPalette != merged)
+        tx(new cmd::SetPalette(sprite, frame, &merged));
     });
     job.waitJob();
     if (job.isCanceled())
       return;
   }
-  catch (const base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }

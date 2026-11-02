@@ -18,9 +18,19 @@
 #include <set>
 
 namespace app {
-inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc::frame_t frame)
+inline bool inherit_bank_colors(doc::Layer* layer, int bank,
+                                const IndexedConversionOptions& options = {})
+{
+  return bank >= 0 && !doc::palette_bank_used_by_other_layer(layer, bank) &&
+         (options.copyBankColors || !(doc::initialized_palette_banks(layer->sprite()) & (1 << bank)));
+}
+
+inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc::frame_t frame,
+                                                const IndexedConversionOptions& options = {})
 {
   const auto* palette = layer->sprite()->palette(frame);
+  if (inherit_bank_colors(layer, bank, options))
+    return doc::make_bank_palette(*palette, std::max(0, layer->paletteBank()));
   return (bank >= 0 || doc::force_karn_rules(layer->sprite()) ?
     doc::make_bank_palette(*palette, palette->size() <= 16 ? 0 : std::max(0, bank)) : *palette);
 }
@@ -38,6 +48,7 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
   if (bank == -2 && layer->isTilemap())
     throw std::runtime_error("Convert this tilemap to a regular layer before assigning Full color Reference.");
   const bool fromRgb = layer->isRgbReference();
+  const int initialized = doc::initialized_palette_banks(layer->sprite());
   // Convert once per linked cel data, retaining animation links and undo history.
   if (bank == -2 || fromRgb) {
     std::set<doc::ObjectId> seen;
@@ -51,7 +62,7 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
           false, 0));
       }
       else {
-        const auto palette = palette_for_bank_conversion(layer, bank, cel->frame());
+        const auto palette = palette_for_bank_conversion(layer, bank, cel->frame(), options);
         const int mask = bank >= 0 ? 0 : layer->sprite()->transparentColor();
         image = convert_to_indexed(cel->image(), palette, mask, options);
       }
@@ -73,18 +84,26 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
         if (!doc::is_local_bank_image(cel->image()))
           throw std::runtime_error("This layer contains indices above 15. Use local 0-15 indices before assigning a bank.");
     }
+    const bool inherit = inherit_bank_colors(layer, bank, options);
     for (const auto* original : layer->sprite()->getPalettes()) {
-      if (original->size() < (bank + 1) * 16) {
-        doc::Palette expanded(*original);
+      doc::Palette expanded(*original);
+      if (original->size() < (bank + 1) * 16)
         expanded.resize((bank + 1) * 16);
-        // Import a standalone 16-color palette into a newly allocated bank.
-        if (original->size() <= 16)
-          for (int i = 1; i < original->size(); ++i)
-            expanded.setEntry(doc::bank_global_index(bank, i), original->getEntry(i));
-        tx(new cmd::SetPalette(layer->sprite(), original->frame(), &expanded));
+      if (inherit) {
+        const auto previous = doc::make_bank_palette(*original, std::max(0, layer->paletteBank()));
+        for (int i = 1; i < 16; ++i)
+          expanded.setEntry(doc::bank_global_index(bank, i), previous.getEntry(i));
       }
+      if (expanded != *original)
+        tx(new cmd::SetPalette(layer->sprite(), original->frame(), &expanded));
     }
   }
+  auto spriteData = layer->sprite()->userData();
+  spriteData.properties(doc::kPaletteBankProperties)["initialized"] =
+    int32_t(initialized | (bank >= 0 ? (1 << bank) : 0) |
+            (layer->paletteBank() >= 0 ? (1 << layer->paletteBank()) : 0));
+  tx(new cmd::SetUserData(layer->sprite(), spriteData,
+                         static_cast<Doc*>(layer->sprite()->document())));
   auto data = layer->userData();
   if (bank == -1)
     data.properties(doc::kPaletteBankProperties).erase("bank");

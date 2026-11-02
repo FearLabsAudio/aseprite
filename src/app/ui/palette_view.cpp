@@ -712,7 +712,7 @@ bool PaletteView::onProcessMessage(Message* msg)
             if (m_hot.part == Hit::COLOR || m_hot.part == Hit::POSSIBLE_COLOR) {
               int newSize = std::max(1, m_hot.color);
               m_adapter->resizePalette(this, newSize);
-              m_selectedEntries.resize(newSize);
+              m_selectedEntries.resize(m_adapter->size());
             }
             break;
         }
@@ -1318,7 +1318,10 @@ void PaletteView::setNewPalette(doc::Palette* oldPalette,
       m_delegate->onPaletteViewIndexChange(m_currentEntry, ui::kButtonLeft);
   }
 
-  set_current_palette(newPalette, false);
+  // The delegate can reject or constrain an edit. Never display an uncommitted
+  // palette (or all document banks) over the active layer's local palette.
+  const auto site = UIContext::instance()->activeSite();
+  set_current_palette(m_delegate && site.palette() ? site.palette() : newPalette, false);
   manager()->invalidate();
 }
 

@@ -29,6 +29,7 @@
 #include "app/ui/rgbmap_algorithm_selector.h"
 #include "app/ui/skin/skin_theme.h"
 #include "app/util/indexed_conversion.h"
+#include "app/util/conversion_preview_task.h"
 #include "app/util/palette_bank.h"
 #include "doc/cel.h"
 #include "doc/mask.h"
@@ -43,6 +44,7 @@
 #include "render/render.h"
 #include "render/task_delegate.h"
 #include "ui/listitem.h"
+#include "ui/alert.h"
 #include "ui/size_hint_event.h"
 #include "ui/scale.h"
 
@@ -77,16 +79,15 @@ rgba_to_graya_func get_gray_func(gen::ToGrayAlgorithm toGray)
   return nullptr;
 }
 
-class ConvertThread : public render::TaskDelegate {
+class ConvertThread : public ConversionPreviewTask {
 public:
   ConvertThread(const doc::ImageRef& dstImage, const doc::Sprite* sprite,
                 doc::frame_t frame, const gfx::Point& pos,
                 const ConversionSource& source, const IndexedConversionOptions& options)
-    : m_image(dstImage), m_pos(pos), m_running(true), m_stopFlag(false), m_progress(0.0)
-    , m_thread([this, sprite, frame, source, options] {
+    : ConversionPreviewTask([dstImage, sprite, frame, pos, source, options](render::TaskDelegate& task) {
       auto indexed = convert_to_indexed(source.image.get(), source.palette,
-                                        source.transparent, options, this);
-      if (!m_stopFlag) {
+                                        source.transparent, options, &task);
+      if (task.continueTask()) {
         doc::ImageRef rgba(render::convert_pixel_format(indexed.get(), nullptr, IMAGE_RGB,
           render::Dithering(), nullptr, &source.palette, source.transparent < 0, 0));
         render::Render renderer;
@@ -122,92 +123,29 @@ public:
           renderer.setExtraImage(render::ExtraType::OVER_COMPOSITE, &extra, rgba.get(),
                                  source.layer->blendMode(), source.layer, frame);
         }
-        renderer.renderSprite(m_image.get(), sprite, frame,
-          gfx::Clip(0, 0, m_pos.x, m_pos.y, m_image->width(), m_image->height()));
+        renderer.renderSprite(dstImage.get(), sprite, frame,
+          gfx::Clip(0, 0, pos.x, pos.y, dstImage->width(), dstImage->height()));
       }
-      m_running = false;
     })
   {
   }
 
-  ConvertThread(const doc::ImageRef& dstImage,
-                const doc::Sprite* sprite,
-                const doc::frame_t frame,
-                const doc::ColorMode colorMode,
-                const render::Dithering& dithering,
-                const gen::ToGrayAlgorithm toGray,
-                const gfx::Point& pos,
-                const bool newBlend)
-    : m_image(dstImage)
-    , m_pos(pos)
-    , m_running(true)
-    , m_stopFlag(false)
-    , m_progress(0.0)
-    , m_thread([this,
-                sprite,
-                frame,
-                colorMode,
-                dithering,
-                toGray,
-                newBlend]() { // Copy the matrix
-      run(sprite, frame, colorMode, dithering, toGray, newBlend);
-    })
+  ConvertThread(const doc::ImageRef& dstImage, const doc::Sprite* sprite,
+                doc::frame_t frame, doc::ColorMode colorMode,
+                const render::Dithering& dithering, gen::ToGrayAlgorithm toGray,
+                const gfx::Point& pos, bool newBlend)
+    : ConversionPreviewTask([=](render::TaskDelegate& task) {
+        doc::ImageRef tmp(Image::create(sprite->pixelFormat(), dstImage->width(), dstImage->height()));
+        render::Render renderer;
+        renderer.setNewBlend(newBlend);
+        renderer.renderSprite(tmp.get(), sprite, frame,
+          gfx::Clip(0, 0, pos.x, pos.y, dstImage->width(), dstImage->height()));
+        render::convert_pixel_format(tmp.get(), dstImage.get(), PixelFormat(colorMode),
+          dithering, sprite->rgbMap(frame), sprite->palette(frame),
+          sprite->backgroundLayer() != nullptr, 0, get_gray_func(toGray), &task);
+      })
   {
   }
-
-  void stop()
-  {
-    m_stopFlag = true;
-    m_thread.join();
-  }
-
-  bool isRunning() const { return m_running; }
-
-  double progress() const { return m_progress; }
-
-private:
-  void run(const Sprite* sprite,
-           const doc::frame_t frame,
-           const doc::ColorMode colorMode,
-           const render::Dithering& dithering,
-           const gen::ToGrayAlgorithm toGray,
-           const bool newBlend)
-  {
-    doc::ImageRef tmp(Image::create(sprite->pixelFormat(), m_image->width(), m_image->height()));
-
-    render::Render render;
-    render.setNewBlend(newBlend);
-    render.renderSprite(tmp.get(),
-                        sprite,
-                        frame,
-                        gfx::Clip(0, 0, m_pos.x, m_pos.y, m_image->width(), m_image->height()));
-
-    render::convert_pixel_format(tmp.get(),
-                                 m_image.get(),
-                                 (PixelFormat)colorMode,
-                                 dithering,
-                                 sprite->rgbMap(frame),
-                                 sprite->palette(frame),
-                                 (sprite->backgroundLayer() != nullptr),
-                                 0,
-                                 get_gray_func(toGray),
-                                 this);
-
-    m_running = false;
-  }
-
-private:
-  // render::TaskDelegate impl
-  bool continueTask() override { return !m_stopFlag; }
-
-  void notifyTaskProgress(double progress) override { m_progress = progress; }
-
-  doc::ImageRef m_image;
-  gfx::Point m_pos;
-  std::atomic<bool> m_running;
-  std::atomic<bool> m_stopFlag;
-  std::atomic<double> m_progress;
-  std::thread m_thread;
 };
 
 class ConversionItem : public ListItem {
@@ -338,6 +276,28 @@ public:
 
   ~ColorModeWindow() { stop(); }
 
+  void checkPreviewError() const
+  {
+    if (m_previewError) {
+      try {
+        std::rethrow_exception(m_previewError);
+      }
+      catch (const std::exception&) {
+        throw;
+      }
+      catch (...) {
+        throw std::runtime_error("The color conversion preview failed. Your artwork has not been changed.");
+      }
+    }
+  }
+
+  void finishPreview()
+  {
+    // Also check errors when OK/Cancel beats the progress timer.
+    stop();
+    checkPreviewError();
+  }
+
   doc::ColorMode selectedColorMode() const
   {
     ASSERT(m_selectedItem);
@@ -411,11 +371,34 @@ private:
     m_timer.stop();
     if (m_bgThread) {
       m_bgThread->stop();
+      if (m_bgThread->error())
+        m_previewError = m_bgThread->error();
       m_bgThread.reset(nullptr);
     }
   }
 
   void onChangeColorMode()
+  {
+    try {
+      updatePreview();
+    }
+    catch (...) {
+      previewFailed(std::current_exception());
+    }
+  }
+
+  void previewFailed(std::exception_ptr error)
+  {
+    m_previewError = error;
+    stop();
+    m_image.reset();
+    m_imageBuffer.reset();
+    ok()->setEnabled(false);
+    closeWindow(nullptr);
+    // The caller reports the error after the modal window has unwound.
+  }
+
+  void updatePreview()
   {
     ConversionItem* item = static_cast<ConversionItem*>(colorMode()->getSelectedChild());
     if (item == m_selectedItem) // Avoid restarting the conversion process for the same option
@@ -423,6 +406,7 @@ private:
     m_selectedItem = item;
 
     stop();
+    checkPreviewError();
 
     gfx::Rect visibleBounds = m_editor->getVisibleSpriteBounds();
     if (visibleBounds.isEmpty())
@@ -519,7 +503,12 @@ private:
     if (!m_bgThread->isRunning()) {
       m_timer.stop();
       m_bgThread->stop();
+      const auto error = m_bgThread->error();
       m_bgThread.reset(nullptr);
+      if (error) {
+        previewFailed(error);
+        return;
+      }
 
       if (m_source)
         m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_image.get(),
@@ -547,6 +536,7 @@ private:
   doc::ImageRef m_image;
   doc::ImageBufferPtr m_imageBuffer;
   std::unique_ptr<ConvertThread> m_bgThread;
+  std::exception_ptr m_previewError;
   ConversionItem* m_selectedItem;
   DitheringSelector* m_ditheringSelector;
   RgbMapAlgorithmSelector* m_mapAlgorithmSelector;
@@ -575,10 +565,12 @@ bool choose_indexed_conversion(Editor* editor, doc::Layer* layer,
           input.image->putPixel(x, y, 0);
   }
   ColorModeWindow window(editor, &input);
+  window.checkPreviewError();
   window.remapWindow();
   window.centerWindow();
   load_window_pos(&window, "ChangePixelFormat");
   window.openWindowInForeground();
+  window.finishPreview();
   save_window_pos(&window, "ChangePixelFormat");
   if (window.closer() != window.ok())
     return false;
@@ -590,6 +582,18 @@ bool choose_indexed_conversion(Editor* editor, doc::Layer* layer,
 bool choose_palette_bank_conversion(doc::Layer* layer, int bank,
                                     IndexedConversionOptions& options)
 {
+  if (bank >= 0 && bank != layer->paletteBank() && App::instance()->isGui() &&
+      !doc::palette_bank_used_by_other_layer(layer, bank) &&
+      (doc::initialized_palette_banks(layer->sprite()) & (1 << bank))) {
+    const int answer = ui::Alert::show(
+      "Unused Palette Bank<<No other layer uses this bank."
+      "<<Copy the layer's previous palette colors into it,"
+      "<<or keep the bank's existing colors?"
+      "||&Copy Colors||&Keep Bank||&Cancel");
+    if (answer != 1 && answer != 2)
+      return false;
+    options.copyBankColors = answer == 1;
+  }
   if (!layer->isRgbReference() || bank == -2 || !App::instance()->isGui())
     return true;
   auto* editor = Editor::activeEditor();
@@ -599,9 +603,12 @@ bool choose_palette_bank_conversion(doc::Layer* layer, int bank,
   doc::ImageRef image = cel ? cel->imageRef() : doc::ImageRef(Image::create(IMAGE_RGB, 1, 1));
   if (!cel)
     image->clear(0);
-  const auto palette = palette_for_bank_conversion(layer, bank, editor->frame());
-  return choose_indexed_conversion(editor, layer, image, cel ? cel->position() : gfx::Point(),
+  const auto palette = palette_for_bank_conversion(layer, bank, editor->frame(), options);
+  const bool copyBankColors = options.copyBankColors;
+  const bool accepted = choose_indexed_conversion(editor, layer, image, cel ? cel->position() : gfx::Point(),
     palette, bank >= 0 ? 0 : layer->sprite()->transparentColor(), false, options);
+  options.copyBankColors = copyBankColors;
+  return accepted;
 }
 
 struct ChangePixelFormatParams : public NewParams {
@@ -694,12 +701,14 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
 
   if (ui) {
     ColorModeWindow window(Editor::activeEditor());
+    window.checkPreviewError();
 
     window.remapWindow();
     window.centerWindow();
 
     load_window_pos(&window, "ChangePixelFormat");
     window.openWindowInForeground();
+    window.finishPreview();
     save_window_pos(&window, "ChangePixelFormat");
 
     if (window.closer() != window.ok())

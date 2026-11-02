@@ -1,5 +1,12 @@
 # Aseprite Tests
 
+With `ENABLE_TESTS=ON`, the `crash_safety_tests` native target deliberately
+throws conversion-worker exceptions (including `std::bad_alloc`), rejects a
+stroke through KARN validation, and restores a corrupted tool-presets file.
+It checks rollback, a single commit attempt, subsequent editing, undo/redo,
+save/reopen, and preset-file preservation. It creates its own temporary user
+profile, so running it does not modify your preferences or saved presets.
+
 The Windows setup/build scripts have a separate test suite that uses the
 PowerShell included with Windows 11. From the repository root, run:
 

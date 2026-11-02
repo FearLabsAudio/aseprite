@@ -15,6 +15,7 @@
 #include "base/serialization.h"
 #include "doc/palette.h"
 #include "doc/palette_rgb444.h"
+#include "doc/karn_rules.h"
 #include "doc/layer.h"
 #include <stdexcept>
 #include "doc/sprite.h"
@@ -35,6 +36,11 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
     doc::snap_rgb444(constrained);
   newPalette = &constrained;
   const Palette* curPalette = sprite->palette(frame);
+  // Validate before execution, including color edits implanted into an existing
+  // undo command (which do not go through Transaction::commit).
+  if (doc::force_karn_rules(sprite) &&
+      (newPalette->size() < 16 || newPalette->size() > 256 || newPalette->size() % 16))
+    throw std::runtime_error("KARN palette banks have 16 colors. The palette was not resized.");
   for (const auto* layer : sprite->allLayers())
     if (layer->paletteBank() >= 0 && newPalette->size() < (layer->paletteBank() + 1) * 16)
       throw std::runtime_error("The document palette must include every assigned 16-color bank.");

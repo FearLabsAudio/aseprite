@@ -1,6 +1,8 @@
 -- KARN: local tile indices, per-layer banks, persistence, and export.
 local out = app.params.output or '_test_palette_banks'
 local s = Sprite(16, 8, ColorMode.INDEXED)
+-- This fixture represents established banks, not first-time assignments.
+s.properties('karn.palette-banks.v1').initialized = 0xffff
 s.gridBounds = Rectangle(0, 0, 8, 8)
 local pal = s.palettes[1]
 pal:resize(256)

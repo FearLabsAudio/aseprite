@@ -75,7 +75,7 @@ PixelFormat Layer::pixelFormat() const
 Palette* Layer::palette(frame_t frame) const
 {
   const int bank = paletteBank();
-  if (isRgbReference() || (bank < 0 && !force_karn_rules(sprite())))
+  if (bank < 0 && !force_karn_rules(sprite()))
     return sprite()->palette(frame);
   Palette local = make_bank_palette(*sprite()->palette(frame), std::max(0, bank));
   if (!m_bankPalette)

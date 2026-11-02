@@ -8,6 +8,16 @@
 #include "app/cli/app_options.h"
 #include "app/doc_undo.h"
 #include "app/test_context.h"
+#include "app/commands/commands.h"
+#include "app/commands/params.h"
+#include "app/modules/palettes.h"
+#include "app/pref/preferences.h"
+#include "app/ui_context.h"
+#include "app/ui/color_bar.h"
+#include "app/ui/palette_view.h"
+#include "ui/alert.h"
+#include "ui/manager.h"
+#include "ui/timer.h"
 #include "os/system.h"
 #include "doc/image.h"
 #include "doc/palette_bank.h"
@@ -97,6 +107,7 @@ TEST(IndexedConversion, BankChangeConvertsAllFramesAndUndoesAsOneEdit)
   for (int i = 0; i < 32; ++i)
     palette->setEntry(i, rgba(0, 0, 0, 255));
   palette->setEntry(17, rgba(255, 255, 255, 255));
+  sprite->userData().properties(kPaletteBankProperties)["initialized"] = int32_t(2);
   const Palette before(*palette);
   {
     Tx tx(sprite);
@@ -141,6 +152,114 @@ TEST(IndexedConversion, BankChangeConvertsAllFramesAndUndoesAsOneEdit)
   EXPECT_EQ(1, layer->paletteBank());
   for (auto* cel : layer->cels())
     EXPECT_EQ(0, count_diff_between_images(converted.get(), cel->image()));
+  document->close();
+  delete document;
+  app.run(false);
+}
+
+TEST(IndexedConversion, BankPaletteUIAndReuse)
+{
+  os::SystemRef system = os::System::make();
+  const char* argv[] = { g_exeName };
+  AppOptions arguments(1, argv);
+  App app;
+  app.initialize(arguments);
+  Preferences::instance().experimental.useNativeClipboard(false);
+  auto* context = UIContext::instance();
+  auto* document = context->documents().add(8, 8, ColorMode::INDEXED);
+  context->setActiveDocument(document);
+  auto* sprite = document->sprite();
+  auto* a = sprite->firstLayer();
+  auto* b = new LayerImage(sprite);
+  sprite->root()->addLayer(b);
+  sprite->palette(0)->setEntry(3, rgba(17, 34, 51, 255));
+  const auto assign = [&](Layer* layer, int bank, bool copy = false) {
+    IndexedConversionOptions options;
+    options.copyBankColors = copy;
+    Tx tx(sprite);
+    set_layer_palette_bank(tx, layer, bank, options);
+    tx.commit();
+  };
+  assign(a, 2);
+  assign(b, 5);
+  context->setActiveLayer(a);
+  EXPECT_EQ(16, get_current_palette()->size());
+  sprite->setTotalFrames(2);
+  context->setActiveFrame(1);
+  EXPECT_EQ(16, get_current_palette()->size());
+  context->setActiveFrame(0);
+  auto* view = ColorBar::instance()->getPaletteView();
+  view->selectRange(1, 15);
+  view->copyToClipboard();
+  context->setActiveLayer(b);
+  // The clipboard must retain the source colors even after a layer change.
+  const auto expected = make_bank_palette(*sprite->palette(0), 2);
+  sprite->palette(0)->setEntry(83, rgba(255, 0, 0, 255));
+  app_refresh_screen();
+  const Palette before(*sprite->palette(0));
+  view->selectRange(1, 15);
+  view->pasteFromClipboard();
+  EXPECT_EQ(expected, *b->palette(0));
+  for (int i = 0; i < before.size(); ++i)
+    if (i <= 80 || i >= 96)
+      EXPECT_EQ(before.getEntry(i), sprite->palette(0)->getEntry(i));
+  EXPECT_EQ(16, get_current_palette()->size());
+  document->undoHistory()->undo();
+  EXPECT_EQ(before, *sprite->palette(0));
+  document->undoHistory()->redo();
+  EXPECT_EQ(expected, *b->palette(0));
+
+  // An unused, previously assigned bank supports both choices. A shared bank
+  // must never be overwritten, even if a caller requests copying its colors.
+  assign(a, 3);
+  EXPECT_EQ(16, get_current_palette()->size());
+  sprite->palette(0)->setEntry(35, rgba(255, 0, 0, 255));
+  // Exercise the actual unused-bank dialog: Cancel, Keep, and Copy. Merely
+  // choosing an option must not mutate anything before the transaction starts.
+  for (int button : {3, 2, 1}) {
+    const Palette snapshot(*sprite->palette(0));
+    bool shown = false;
+    ui::Timer answer(10);
+    answer.Tick.connect([&] {
+      auto* alert = dynamic_cast<ui::Alert*>(ui::Manager::getDefault()->getTopWindow());
+      if (alert) {
+        EXPECT_EQ("Unused Palette Bank", alert->text());
+        shown = true;
+        answer.stop();
+        alert->closeWindow(alert->findChild(("button-" + std::to_string(button)).c_str()));
+      }
+    });
+    answer.start();
+    IndexedConversionOptions options;
+    EXPECT_EQ(button != 3, choose_palette_bank_conversion(a, 2, options));
+    answer.stop();
+    EXPECT_TRUE(shown);
+    EXPECT_EQ(button == 1, options.copyBankColors);
+    EXPECT_EQ(snapshot, *sprite->palette(0));
+    EXPECT_EQ(3, a->paletteBank());
+  }
+  assign(a, 2, false);
+  EXPECT_EQ(rgba(255, 0, 0, 255), a->palette(0)->getEntry(3));
+  assign(a, 3);
+  assign(a, 2, true);
+  EXPECT_EQ(expected.getEntry(3), a->palette(0)->getEntry(3));
+  assign(a, 5, true);
+  EXPECT_EQ(expected, *b->palette(0));
+  IndexedConversionOptions noPrompt;
+  EXPECT_TRUE(choose_palette_bank_conversion(a, 7, noPrompt)); // NEW
+  EXPECT_TRUE(choose_palette_bank_conversion(a, 5, noPrompt)); // Already assigned
+
+  Params force;
+  force.set("enabled", "true"); force.set("ui", "false");
+  context->executeCommand(Commands::instance()->byId("ForceKarnRules"), force);
+  Palette resized(*get_current_palette()); resized.resize(17);
+  view->delegate()->onPaletteViewModification(&resized, PaletteViewModification::RESIZE);
+  EXPECT_EQ(16, get_current_palette()->size());
+  EXPECT_EQ(before.size(), sprite->palette(0)->size());
+  assign(b, -2);
+  EXPECT_EQ(16, get_current_palette()->size());
+  assign(b, -1);
+  EXPECT_EQ(16, get_current_palette()->size());
   document->close();
   delete document;
   app.run(false);

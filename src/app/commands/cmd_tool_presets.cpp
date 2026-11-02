@@ -497,9 +497,9 @@ protected:
 class ToolPresetsPanel : public VBox,
                          public tools::ActiveToolObserver {
 public:
-  ToolPresetsPanel()
+  explicit ToolPresetsPanel(std::vector<ToolPreset> presets)
     : VBox()
-    , m_presets(load_tool_presets(tool_presets_filename()))
+    , m_presets(std::move(presets))
     , m_checkTimer(1)
   {
     setExpansive(true);
@@ -862,8 +862,20 @@ void ToolPresetsDock::showPanel(bool visible)
   m_impl->visible = visible;
   set_config_bool("ToolPresets", "Visible", visible);
   if (visible && !m_impl->panel) {
-    m_impl->panel = std::make_unique<ToolPresetsPanel>();
-    m_impl->panel->placement->Click.connect([this] { setFloating(!m_impl->floating); });
+    try {
+      auto presets = load_tool_presets(tool_presets_filename());
+      m_impl->panel = std::make_unique<ToolPresetsPanel>(std::move(presets));
+      m_impl->panel->placement->Click.connect([this] { setFloating(!m_impl->floating); });
+    }
+    catch (const std::exception& e) {
+      m_impl->visible = false;
+      set_config_bool("ToolPresets", "Visible", false);
+      Alert::show(fmt::format("Tool Presets<<Could not open tool presets."
+                             "<<The saved preset file has not been changed."
+                             "<<{}<<Repair the file, then reopen View > Tool Presets.||&OK",
+                             e.what()));
+      return;
+    }
   }
   if (!m_impl->panel)
     return;

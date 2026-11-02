@@ -40,6 +40,40 @@ inline bool tileset_uses_palette_banks(const Tileset* tileset)
   return false;
 }
 
+// Ordinary Aseprite files have no bank assignments, so every bank starts new.
+// For older KARN files without history, retain the currently assigned banks.
+inline int initialized_palette_banks(const Sprite* sprite)
+{
+  const auto& maps = sprite->userData().propertiesMaps();
+  const auto group = maps.find(kPaletteBankProperties);
+  if (group != maps.end()) {
+    const auto it = group->second.find("initialized");
+    if (it != group->second.end())
+      return std::visit([](const auto& value) -> int {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_integral_v<T>)
+          return int(value) & 0xffff;
+        return 0;
+      }, static_cast<const UserData::VariantBase&>(it->second));
+  }
+  int initialized = 0;
+  for (const auto* layer : sprite->allLayers())
+    if (layer->paletteBank() >= 0)
+      initialized |= 1 << layer->paletteBank();
+  return initialized;
+}
+
+inline bool palette_bank_used_by_other_layer(const Layer* layer, int bank)
+{
+  for (const auto* other : layer->sprite()->allLayers()) {
+    if (other == layer || !other->isImage() || other->isReference() || other->isRgbReference())
+      continue;
+    if (other->paletteBank() == bank)
+      return true;
+  }
+  return false;
+}
+
 inline bool is_local_bank_image(const Image* image)
 {
   if (!image || image->pixelFormat() != IMAGE_INDEXED)
@@ -81,7 +115,7 @@ inline Palette make_bank_palette(const Palette& source, int bank)
 // Merge a local palette edit without changing any other bank or its reserved slot.
 inline Palette merge_bank_palette(const Layer* layer, frame_t frame, const Palette& local)
 {
-  if (!uses_local_palette(layer))
+  if (!layer || (!uses_local_palette(layer) && !force_karn_rules(layer->sprite())))
     return local;
   Palette result(*layer->sprite()->palette(frame));
   const int bank = std::max(0, layer->paletteBank());

@@ -46,6 +46,10 @@ Open Palette Banks with the **PB** button. In Layers, name your layers and choos
 
 Select a layer to paint with and edit its palette in the color bar. Layers assigned to the same bank share its colors. Choose Document Palette to leave a layer unbanked; only numbered banks are included in KARN exports.
 
+A bank that has never been assigned starts NEW. Its first assignment copies the layer's previous palette colors. If a previously used bank has no other layers assigned, choose Copy Colors or Keep Bank when assigning it again. Banks already shared by other layers keep their colors.
+
+Import a palette with a banked layer selected to update only that bank. To copy colors between banks, select and copy the source swatches, select the destination layer and swatches, then paste. Under Force KARN rules, each palette shown in the color bar stays at 16 slots.
+
 ## VERA colors and KARN rules
 
 The 4-bit checkbox beside the palette Options button enables Force 4 bit color channels for the document. It constrains all banks to VERA-compatible RGB444 colors, including subsequent palette edits and imports. Pixel indices and alpha are preserved.

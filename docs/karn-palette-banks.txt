@@ -39,9 +39,19 @@ Colors are stored in the ordinary document palette. Local slot i (1–15) in
 bank b uses master palette entry 16*b+i. Slot zero stays transparent; reserved
 entries 16, 32, etc. are not painted by banked layers. Selecting an ordinary
 layer shows the master palette. Loading a palette while a banked layer is
-active imports its slots 1–15 into that bank only. If a standalone document
-has at most 16 colors, assigning a previously unavailable bank allocates it
-and copies those colors into it. Existing indices never change on assignment.
+active imports its slots 1–15 into that bank only. Copy selected palette colors,
+select another layer/bank, select destination slots, and paste to transfer colors
+without changing the source bank. Under KARN rules the panel stays at 16 slots,
+including on Document Palette and Full color Reference assignments.
+
+A never-assigned bank is NEW and inherits the previous assignment's colors on
+first use. Reassigning to a previously used bank with no other layer assigned
+asks Copy Colors / Keep Bank / Cancel. Shared banks are never overwritten by
+assignment. Initialization history is stored with the sprite, survives save/load,
+and participates in undo/redo. Ordinary Aseprite documents start with all banks
+NEW; older KARN documents without this history retain their currently assigned
+banks. Noninteractive script assignments keep previously initialized colors.
+Existing indices never change on assignment between indexed banks.
 
 Assignments require existing tile pixels to be in 0–15. The application does
 not silently mask high indices, quantize indexed artwork, or guess which bank

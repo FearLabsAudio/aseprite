@@ -912,7 +912,7 @@ void ColorBar::onRemapPalButtonClick()
                                            sprite->transparentColor(),
                                            true);
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 
@@ -977,7 +977,7 @@ void ColorBar::onRemapPalButtonClick()
     update_screen_for_document(writer.document());
     hideRemapPal();
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }
@@ -1057,7 +1057,7 @@ void ColorBar::onRemapTilesButtonClick()
     // TODO this should be automatic in last ~Tx() destruction
     manager()->invalidate();
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }
@@ -1102,6 +1102,12 @@ void ColorBar::onPaletteViewIndexChange(int index, ui::MouseButton button)
 
 void ColorBar::onPaletteViewModification(const Palette* newPalette, PaletteViewModification mod)
 {
+  const auto site = UIContext::instance()->activeSite();
+  if (mod == PaletteViewModification::RESIZE && site.layer() &&
+      (doc::uses_local_palette(site.layer()) || doc::force_karn_rules(site.sprite()))) {
+    StatusBar::instance()->showTip(2500, "Palette banks have 16 colors. Select another bank to edit its colors.");
+    return;
+  }
   const char* text = "Palette Change";
   switch (mod) {
     case PaletteViewModification::CLEAR:       text = "Clear Colors"; break;
@@ -1130,9 +1136,12 @@ void ColorBar::setPalette(const doc::Palette* newPalette, const std::string& act
       tx.commit();
     }
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
+  const auto site = UIContext::instance()->activeSite();
+  if (site.palette())
+    set_current_palette(site.palette(), false);
 }
 
 void ColorBar::setTransparentIndex(int index)
@@ -1152,7 +1161,7 @@ void ColorBar::setTransparentIndex(int index)
       update_screen_for_document(writer.document());
     }
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }
@@ -1254,7 +1263,7 @@ void ColorBar::onTilesViewClearTiles(const doc::PalettePicks& _picks)
       update_screen_for_document(writer.document());
     }
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }
@@ -1295,7 +1304,7 @@ void ColorBar::onTilesViewResize(const int newSize)
       update_screen_for_document(writer.document());
     }
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }
@@ -1326,7 +1335,7 @@ void ColorBar::onTilesViewDragAndDrop(doc::Tileset* tileset,
 
     ctx->setSelectedTiles(picks);
   }
-  catch (base::Exception& e) {
+  catch (const std::exception& e) {
     Console::showException(e);
   }
 }
@@ -1919,11 +1928,14 @@ void ColorBar::updateCurrentSpritePalette(const char* operationName)
         }
       }
     }
-    catch (base::Exception& e) {
+    catch (const std::exception& e) {
       Console::showException(e);
     }
   }
 
+  const auto site = UIContext::instance()->activeSite();
+  if (site.palette())
+    set_current_palette(site.palette(), false);
   m_paletteView.invalidate();
 
   if (!m_redrawTimer.isRunning())

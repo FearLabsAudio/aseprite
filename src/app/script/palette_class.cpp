@@ -153,22 +153,27 @@ int Palette_eq(lua_State* L)
 
 int Palette_resize(lua_State* L)
 {
-  auto obj = get_obj<PaletteObj>(L, 1);
-  auto pal = obj->palette(L);
-  int ncolors = lua_tointeger(L, 2);
-  if (auto sprite = obj->sprite(L)) {
-    Palette newPal(*pal);
-    newPal.resize(ncolors);
+  try {
+    auto obj = get_obj<PaletteObj>(L, 1);
+    auto pal = obj->palette(L);
+    int ncolors = lua_tointeger(L, 2);
+    if (auto sprite = obj->sprite(L)) {
+      Palette newPal(*pal);
+      newPal.resize(ncolors);
 
-    if (*pal != newPal) {
-      Tx tx(sprite);
-      tx(new cmd::SetPalette(sprite, pal->frame(), &newPal));
-      tx.commit();
+      if (*pal != newPal) {
+        Tx tx(sprite);
+        tx(new cmd::SetPalette(sprite, pal->frame(), &newPal));
+        tx.commit();
+      }
     }
+    else
+      pal->resize(ncolors);
+    return 1;
   }
-  else
-    pal->resize(ncolors);
-  return 1;
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
+  }
 }
 
 int Palette_getColor(lua_State* L)
@@ -191,32 +196,37 @@ int Palette_getColor(lua_State* L)
 
 int Palette_setColor(lua_State* L)
 {
-  auto obj = get_obj<PaletteObj>(L, 1);
-  auto pal = obj->palette(L);
-  int i = lua_tointeger(L, 2);
-  if (i < 0 || i >= int(pal->size()))
-    return luaL_error(L, "index out of bounds %d", i);
+  try {
+    auto obj = get_obj<PaletteObj>(L, 1);
+    auto pal = obj->palette(L);
+    int i = lua_tointeger(L, 2);
+    if (i < 0 || i >= int(pal->size()))
+      return luaL_error(L, "index out of bounds %d", i);
 
-  doc::color_t docColor = convert_args_into_pixel_color(L, 3, doc::IMAGE_RGB);
+    doc::color_t docColor = convert_args_into_pixel_color(L, 3, doc::IMAGE_RGB);
 
-  if (auto sprite = obj->sprite(L)) {
-    // Nothing to do
-    if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-      docColor = doc::snap_rgb444(docColor);
-    if (pal->getEntry(i) == docColor)
-      return 0;
+    if (auto sprite = obj->sprite(L)) {
+      // Nothing to do
+      if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
+        docColor = doc::snap_rgb444(docColor);
+      if (pal->getEntry(i) == docColor)
+        return 0;
 
-    Palette newPal(*pal);
-    newPal.setEntry(i, docColor);
+      Palette newPal(*pal);
+      newPal.setEntry(i, docColor);
 
-    Tx tx(sprite);
-    tx(new cmd::SetPalette(sprite, pal->frame(), &newPal));
-    tx.commit();
+      Tx tx(sprite);
+      tx(new cmd::SetPalette(sprite, pal->frame(), &newPal));
+      tx.commit();
+    }
+    else {
+      pal->setEntry(i, docColor);
+    }
+    return 0;
   }
-  else {
-    pal->setEntry(i, docColor);
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
   }
-  return 0;
 }
 
 int Palette_get_frame(lua_State* L)

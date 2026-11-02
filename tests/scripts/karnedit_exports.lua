@@ -15,6 +15,8 @@ local function read(path)
 end
 write(root..'/src/constants.p8','; isolated exporter fixture')
 local s=Sprite(24,16,ColorMode.INDEXED)
+-- These pre-authored banks already have their own colors.
+s.properties('karn.palette-banks.v1').initialized=0xffff
 local p=s.palettes[1]; p:resize(256)
 for i=0,255 do p:setColor(i,Color((i%16)*17,((i//16)%16)*17,0)) end
 p:setColor(54,Color(85,51,0)) -- duplicate RGB, different local slots 5 and 6
