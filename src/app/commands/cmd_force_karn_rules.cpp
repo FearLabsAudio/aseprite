@@ -39,7 +39,7 @@ protected:
     if (enabled && !karn_rules_violation(s).empty() && context->isUIAvailable() && m_ui) {
       if (ui::Alert::show("Force KARN rules<<KARN rules enforce"
                           "<<8 x 8 pixel tiles; horizontal and vertical flips (no diagonal)."
-                          "<<4-bit per channel palette colors."
+                          "<<Fully opaque, 4-bit per channel palette colors."
                           "<<Indexed color; local indices 0-15 per layer; index 0 transparent."
                           "<<Palette banks and unbanked layers are allowed."
                           "<<"

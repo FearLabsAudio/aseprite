@@ -291,8 +291,7 @@ void DrawingState::onCommitMouseMove(Editor* editor, const gfx::PointF& spritePo
 bool DrawingState::onSetCursor(Editor* editor, const gfx::Point& mouseScreenPos)
 {
   if (m_toolLoop->getInk()->isEyedropper()) {
-    auto theme = skin::SkinTheme::get(editor);
-    editor->showMouseCursor(kCustomCursor, theme->cursors.eyedropper());
+    editor->showEyedropperCursor(mouseScreenPos);
   }
   else {
     editor->showBrushPreview(mouseScreenPos);

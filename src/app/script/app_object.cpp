@@ -471,6 +471,10 @@ int App_useTool(lua_State* L)
 
     ColorPicker picker;
     picker.pickColor(site, gfx::PointF(pt), render::Projection(), ColorPicker::FromComposition);
+    if (!picker.available()) {
+      lua_pushnil(L);
+      return 1;
+    }
     app::Color color = picker.color();
     if (buttonIdx == 0)
       Preferences::instance().colorBar.fgColor(color);

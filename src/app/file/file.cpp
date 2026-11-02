@@ -1104,6 +1104,7 @@ void FileOp::postLoad()
   }
 
   Sprite* sprite = m_document->sprite();
+  doc::normalize_karn_palette_alpha(sprite);
   if (sprite && m_createPaletteFromRgba && sprite->getPalettes().size() <= 1 &&
       sprite->palette(frame_t(0))->isBlack()) {
     std::shared_ptr<Palette> palette;

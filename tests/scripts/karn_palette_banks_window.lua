@@ -14,13 +14,14 @@ local reference=s:newLayer(); reference.name='RGB'; reference.paletteBank=-2
 app.layer=banked
 
 local commands,alerts={},{}
+local confirmation=2
 local plugin={preferences={},newMenuGroup=function() end,
   newCommand=function(self,o) commands[o.id]=o end}
 local shown=0
 local function dialog()
   local d={data={},controls={},sections={},order={}}
   -- Intentionally no tab/endtabs methods: everything belongs on one page.
-  for _,method in ipairs{'radio','entry','combobox','check','shades'} do
+  for _,method in ipairs{'radio','entry','combobox','check','shades','button'} do
     d[method]=function(self,o)
       self.controls[o.id]=o
       self.order[#self.order+1]=o.id
@@ -49,7 +50,10 @@ local function dialog()
     local function select(layer)
       self.controls['current'..rows[layer.name]].onclick()
       assert(app.layer==layer)
-      for name,row in pairs(rows) do assert(self.data['current'..row]==(name==layer.name)) end
+      for name,row in pairs(rows) do
+        assert(self.data['current'..row]==(name==layer.name))
+        assert(self.controls['current'..row].label==(name==layer.name and 'Current' or ''))
+      end
     end
     local function click(layer,control,value)
       local id=control..rows[layer.name]
@@ -99,13 +103,33 @@ local function dialog()
     assert(self.controls['bank'..rows.Banked].option=='03 - Hull')
     assert(app.layer==child)
     app.undo()
+    -- Used banks cannot be cleared, even when their layer/group is hidden or locked.
+    assert(not self.controls.clear3.enabled and not self.controls.clear4.enabled)
+    assert(self.controls.clear0.enabled and self.controls.clear5.enabled)
+    local bankBefore=s:getPaletteBank(5,1)
+    local initialized=s.properties(namespace).initialized
+    confirmation=2
+    self.controls.clear5.onclick()
+    assert(s:getPaletteBank(5,1)==bankBefore and s.properties(namespace).initialized==initialized)
+    confirmation=1
+    self.controls.clear5.onclick()
+    assert(s.properties(namespace).initialized==(initialized & ~(1<<5)))
+    for i=1,15 do assert(s:getPaletteBank(5,1):getColor(i)==Color(0,0,0,255)) end
+    app.undo()
+    assert(s:getPaletteBank(5,1)==bankBefore and s.properties(namespace).initialized==initialized)
     -- Return the fixture to its initial layer flags and selection for reopening.
     document.isVisible=false; document.isEditable=false
     app.layer=banked
   end
   return d
 end
-local proxy=setmetatable({alert=function(message) alerts[#alerts+1]=message end},
+local proxy=setmetatable({alert=function(message)
+    if type(message)=='table' and message.title=='Clear palette bank' then
+      assert(message.text=='Clear this bank and all its colors?')
+      return confirmation
+    end
+    alerts[#alerts+1]=message
+  end},
   {__index=function(_,k) return app[k] end,__newindex=function(_,k,v) app[k]=v end})
 local env=setmetatable({Dialog=dialog,app=proxy},{__index=_G})
 local path=app.params.windows or '../data/extensions/karn-palette-banks/windows.lua'
@@ -116,4 +140,4 @@ app.command.ForceKarnRules{enabled=true,ui=false}
 commands.KarnPaletteBanks.onclick()
 assert(shown==2 and #alerts==0,json.encode(alerts))
 s:close()
-print('Palette Banks window: combined page, selection, visibility, locks and undo/redo OK')
+print('Palette Banks window: Current label, selection, visibility, locks, confirmed unused-bank clearing and undo OK')

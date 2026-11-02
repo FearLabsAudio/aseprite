@@ -208,7 +208,7 @@ int Palette_setColor(lua_State* L)
     if (auto sprite = obj->sprite(L)) {
       // Nothing to do
       if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-        docColor = doc::snap_rgb444(docColor);
+        docColor = doc::snap_rgb444(docColor, doc::force_karn_rules(sprite));
       if (pal->getEntry(i) == docColor)
         return 0;
 

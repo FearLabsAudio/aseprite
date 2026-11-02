@@ -1864,7 +1864,7 @@ int ColorBar::setPaletteEntry(const app::Color& color)
   doc::color_t c = doc::rgba(color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
   const auto* sprite = UIContext::instance()->activeSite().sprite();
   if (sprite && sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-    c = doc::snap_rgb444(c);
+    c = doc::snap_rgb444(c, doc::force_karn_rules(sprite));
 
   Palette* palette = get_current_palette();
   for (int i = 0; i < palette->size(); ++i) {

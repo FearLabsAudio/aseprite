@@ -25,8 +25,8 @@ class EyedropperCommand : public Command {
 public:
   EyedropperCommand();
 
-  // Returns the color in the given sprite pos.
-  void pickSample(const Site& site,
+  // Returns false without changing color/tile when the active bank has no match.
+  bool pickSample(const Site& site,
                   const gfx::PointF& pixelPos,
                   const render::Projection& proj,
                   app::Color& color,

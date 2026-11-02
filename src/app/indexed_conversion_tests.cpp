@@ -9,6 +9,8 @@
 #include <fstream>
 #include "app/util/indexed_conversion.h"
 #include "app/util/palette_bank.h"
+#include "app/color_picker.h"
+#include "app/commands/cmd_eyedropper.h"
 #include "app/cli/app_options.h"
 #include "app/doc_undo.h"
 #include "app/test_context.h"
@@ -19,6 +21,14 @@
 #include "app/ui_context.h"
 #include "app/ui/color_bar.h"
 #include "app/ui/palette_view.h"
+#include "app/ui/skin/skin_theme.h"
+#include "app/ui/editor/editor.h"
+#include "app/ui/editor/standby_state.h"
+#include "app/tools/active_tool.h"
+#include "app/tools/ink.h"
+#include "app/tools/tool_box.h"
+#include "ui/cursor.h"
+#include "ui/system.h"
 #include "ui/alert.h"
 #include "ui/manager.h"
 #include "ui/timer.h"
@@ -32,6 +42,7 @@
 using namespace doc;
 using namespace app;
 static const char* g_exeName;
+static void check_bank_color_picker();
 
 static void disable_test_update_check()
 {
@@ -279,6 +290,7 @@ TEST(IndexedConversion, BankPaletteUIAndReuse)
   document->close();
   delete document;
   check_document_palette_paste();
+  check_bank_color_picker();
   app.run(false);
 }
 
@@ -303,10 +315,10 @@ static void check_document_palette_paste()
   later.setFrame(1);
   later.setEntry(3, rgba(0, 255, 0, 255));
   sprite->setPalette(&later, true);
-  const Palette laterZero(*zero->palette(1));
   Params force;
   force.set("enabled", "true"); force.set("ui", "false");
   context->executeCommand(Commands::instance()->byId("ForceKarnRules"), force);
+  const Palette laterZero(*zero->palette(1));
   const Palette zeroBefore(*zero->palette(0));
   const Palette source(*one->palette(0));
   const Palette documentBefore(*unbanked->palette(0));
@@ -349,6 +361,119 @@ static void check_document_palette_paste()
   ImageRef preview(Image::create(IMAGE_RGB, 8, 8));
   render::Render().renderSprite(preview.get(), sprite, 0);
   EXPECT_EQ(changed.getEntry(3), preview->getPixel(0, 0));
+  // Even slot zero has opaque RGB in KARN, but it remains the mask index.
+  changed.setEntry(0, rgba(255, 0, 255, 0));
+  changed.setEntry(1, rgba(17, 34, 51, 0));
+  view->delegate()->onPaletteViewModification(&changed, PaletteViewModification::CLEAR);
+  EXPECT_EQ(rgba(255, 0, 255, 255), zero->palette(0)->getEntry(0));
+  EXPECT_EQ(rgba(17, 34, 51, 255), zero->palette(0)->getEntry(1));
+  EXPECT_EQ(masterBefore, *sprite->palette(0));
+  pixels->putPixel(0, 0, 0);
+  preview->clear(0);
+  render::Render().renderSprite(preview.get(), sprite, 0);
+  EXPECT_EQ(0, rgba_geta(preview->getPixel(0, 0)));
+  // Clearing a numbered bank covers every native animation palette.
+  const Palette firstBefore(*sprite->palette(0));
+  const Palette secondBefore(*sprite->palette(1));
+  { Tx tx(document, "Clear unused bank"); clear_palette_bank(tx, sprite, 3); tx.commit(); }
+  for (int f = 0; f < 2; ++f)
+    for (int i = 48; i < 64; ++i)
+      EXPECT_EQ(rgba(0, 0, 0, 255), sprite->palette(f)->getEntry(i));
+  document->undoHistory()->undo();
+  EXPECT_EQ(firstBefore, *sprite->palette(0));
+  EXPECT_EQ(secondBefore, *sprite->palette(1));
+  document->close();
+  delete document;
+}
+
+static void check_bank_color_picker()
+{
+  auto* context = UIContext::instance();
+  auto* document = context->documents().add(8, 8, ColorMode::INDEXED);
+  context->setActiveDocument(document);
+  auto* sprite = document->sprite();
+  auto* active = sprite->firstLayer();
+  auto* top = new LayerImage(sprite);
+  sprite->root()->addLayer(top);
+  active->userData().properties(kPaletteBankProperties)["bank"] = int8_t(1);
+  top->userData().properties(kPaletteBankProperties)["bank"] = int8_t(2);
+  auto* palette = sprite->palette(0);
+  for (int i = 0; i < 256; ++i) palette->setEntry(i, rgba(0, 0, 0, 255));
+  palette->setEntry(18, rgba(255, 0, 0, 255));
+  palette->setEntry(37, rgba(255, 0, 0, 255));
+  palette->setEntry(38, rgba(0, 255, 0, 255));
+  ImageRef pixels(Image::create(IMAGE_INDEXED, 8, 8));
+  pixels->clear(0); pixels->putPixel(0, 0, 5); pixels->putPixel(1, 0, 6);
+  top->addCel(new Cel(0, pixels));
+  context->setActiveLayer(active); // No cel on the destination layer.
+  const Site site = context->activeSite();
+  auto& pref = Preferences::instance();
+  const auto oldSample = pref.eyedropper.sample();
+  const auto oldChannel = pref.eyedropper.channel();
+  EyedropperCommand command;
+  for (auto sample : { app::gen::EyedropperSample::ALL_LAYERS,
+                       app::gen::EyedropperSample::CURRENT_LAYER,
+                       app::gen::EyedropperSample::FIRST_REFERENCE_LAYER }) {
+    pref.eyedropper.sample(sample);
+    for (auto channel : { app::gen::EyedropperChannel::COLOR_ALPHA,
+                          app::gen::EyedropperChannel::RGB,
+                          app::gen::EyedropperChannel::INDEX }) {
+      pref.eyedropper.channel(channel);
+      app::Color selected = app::Color::fromIndex(7);
+      tile_t tile = notile;
+      EXPECT_TRUE(command.pickSample(site, gfx::PointF(0, 0), render::Projection(), selected, tile));
+      EXPECT_EQ(app::Color::fromIndex(2), selected);
+      EXPECT_FALSE(command.pickSample(site, gfx::PointF(1, 0), render::Projection(), selected, tile));
+      EXPECT_EQ(app::Color::fromIndex(2), selected); // A failure is a no-op.
+    }
+  }
+  ColorPicker picker;
+  picker.pickColor(site, gfx::PointF(1, 0), render::Projection(), ColorPicker::FromComposition);
+  EXPECT_FALSE(picker.available());
+  EXPECT_EQ(top, picker.layer()); // Auto-select-layer still sees the topmost cel.
+  picker.pickColor(site, gfx::PointF(0, 0), render::Projection(), ColorPicker::FromComposition);
+  EXPECT_TRUE(picker.available());
+  EXPECT_EQ(app::Color::fromIndex(2), picker.color());
+  auto* theme = app::skin::SkinTheme::instance();
+  const auto* cursor = theme->getUnavailableColorCursor();
+  ASSERT_TRUE(cursor && cursor->surface());
+  EXPECT_EQ(cursor, theme->getUnavailableColorCursor());
+  EXPECT_EQ(gfx::Point(5 * ui::guiscale(), 5 * ui::guiscale()), cursor->focus());
+  EXPECT_EQ(gfx::rgba(230, 32, 32, 255), cursor->surface()->getPixel(cursor->focus().x, cursor->focus().y));
+  EXPECT_EQ(0, gfx::geta(cursor->surface()->getPixel(0, 0)));
+  // The toolbar eyedropper and Alt's temporary quick tool must use the same
+  // command/cursor path, for both foreground and background picks.
+  auto* editor = Editor::activeEditor();
+  ASSERT_TRUE(editor);
+  auto* tools = App::instance()->activeToolManager();
+  auto* oldTool = tools->selectedTool();
+  auto* dropper = App::instance()->toolBox()->getToolById("eyedropper");
+  auto* pencil = App::instance()->toolBox()->getToolById("pencil");
+  auto* spray = App::instance()->toolBox()->getToolById("spray");
+  StandbyState standby;
+  for (auto* selected : { dropper, pencil, spray }) {
+    tools->newToolSelectedInToolBar(selected);
+    if (selected != dropper) tools->newQuickToolSelectedFromEditor(dropper);
+    EXPECT_TRUE(editor->getCurrentEditorInk()->isEyedropper());
+    const gfx::Point available = editor->editorToScreen(gfx::Point(0, 0));
+    const gfx::Point unavailable = editor->editorToScreen(gfx::Point(1, 0));
+    EXPECT_TRUE(standby.onSetCursor(editor, unavailable));
+    pref.colorBar.fgColor(app::Color::fromIndex(7));
+    pref.colorBar.bgColor(app::Color::fromIndex(8));
+    command.executeOnMousePos(context, editor, unavailable, true);
+    command.executeOnMousePos(context, editor, unavailable, false);
+    EXPECT_EQ(app::Color::fromIndex(7), pref.colorBar.fgColor());
+    EXPECT_EQ(app::Color::fromIndex(8), pref.colorBar.bgColor());
+    command.executeOnMousePos(context, editor, available, true);
+    command.executeOnMousePos(context, editor, available, false);
+    EXPECT_EQ(app::Color::fromIndex(2), pref.colorBar.fgColor());
+    EXPECT_EQ(app::Color::fromIndex(2), pref.colorBar.bgColor());
+    tools->newQuickToolSelectedFromEditor(nullptr);
+  }
+  tools->newToolSelectedInToolBar(oldTool);
+  ui::set_mouse_cursor(ui::kArrowCursor);
+  pref.eyedropper.sample(oldSample);
+  pref.eyedropper.channel(oldChannel);
   document->close();
   delete document;
 }

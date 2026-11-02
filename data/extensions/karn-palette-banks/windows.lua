@@ -28,6 +28,10 @@ function UI.register(plugin,E,GROUP,BANKS)
     for n=0,15 do options[#options+1]=bankTitle(s,n) end
     local dlg=Dialog{title='Palette Banks',autofit=0}
     local refreshing=false
+    local function bankInUse(n)
+      for _,l in ipairs(layers) do if l.paletteBank==n then return true end end
+      return false
+    end
     local function currentPalette()
       local pal=s.palettes[1]
       for i=1,#s.palettes do
@@ -56,11 +60,14 @@ function UI.register(plugin,E,GROUP,BANKS)
       for n=0,15 do options[#options+1]=bankTitle(s,n) end
       for i,l in ipairs(layers) do
         dlg:modify{id='bank'..i,options=options,option=options[l.paletteBank+3]}
-        dlg:modify{id='current'..i,selected=app.layer==l}
+        dlg:modify{id='current'..i,label=app.layer==l and 'Current' or '',selected=app.layer==l}
         dlg:modify{id='visible'..i,selected=l.isVisible}
         dlg:modify{id='locked'..i,selected=not l.isEditable}
       end
-      for n=0,15 do dlg:modify{id='colors'..n,colors=colorsForBank(n)} end
+      for n=0,15 do
+        dlg:modify{id='colors'..n,colors=colorsForBank(n)}
+        dlg:modify{id='clear'..n,enabled=not bankInUse(n)}
+      end
       for row=0,15 do
         local colors=documentColors(row)
         dlg:modify{id='documentColors'..row,colors=colors,visible=#colors>0}
@@ -70,7 +77,9 @@ function UI.register(plugin,E,GROUP,BANKS)
     end
     dlg:separator{text='Layers'}
     for i,l in ipairs(layers) do
-      dlg:radio{id='current'..i,text='Current',selected=app.layer==l,hexpand=false,
+      -- The grid's label column reserves room for Current on every row.
+      dlg:radio{id='current'..i,label=app.layer==l and 'Current' or '',text='',
+        selected=app.layer==l,hexpand=false,
         onclick=function()
           if refreshing then return end
           attempt(function() app.layer=l end)
@@ -142,7 +151,15 @@ function UI.register(plugin,E,GROUP,BANKS)
           end)
           refreshBanks()
         end}
-      dlg:samerow():shades{id='colors'..n,colors=colorsForBank(n)}:newrow()
+      dlg:samerow():shades{id='colors'..n,colors=colorsForBank(n)}
+      dlg:samerow():button{id='clear'..n,text='x',hexpand=false,enabled=not bankInUse(n),
+        onclick=function()
+          if refreshing or bankInUse(n) then return end
+          if app.alert{title='Clear palette bank',text='Clear this bank and all its colors?',
+            buttons={'Clear','Cancel'}}~=1 then return end
+          attempt(function() s:clearPaletteBank(n) end)
+          refreshBanks()
+        end}:newrow()
     end
     layout.show(dlg,plugin,'banks')
   end

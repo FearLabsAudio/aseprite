@@ -499,7 +499,10 @@ bool StandbyState::onUpdateStatusBar(Editor* editor)
     EyedropperCommand cmd;
     app::Color color = Preferences::instance().colorBar.fgColor();
     doc::tile_t tile = Preferences::instance().colorBar.fgTile();
-    cmd.pickSample(site, spritePos, editor->projection(), color, tile);
+    if (!cmd.pickSample(site, spritePos, editor->projection(), color, tile)) {
+      StatusBar::instance()->setStatusText(0, "Color is not available in the selected palette bank");
+      return true;
+    }
 
     std::string buf =
       fmt::format(" :pos: {} {}", int(std::floor(spritePos.x)), int(std::floor(spritePos.y)));

@@ -532,7 +532,7 @@ bool StateWithWheelBehavior::onSetCursor(Editor* editor, const gfx::Point& mouse
       return true;
     }
     else if (ink->isEyedropper()) {
-      editor->showMouseCursor(kCustomCursor, theme->cursors.eyedropper());
+      editor->showEyedropperCursor(mouseScreenPos);
       return true;
     }
     else if (ink->isZoom()) {

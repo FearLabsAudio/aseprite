@@ -33,8 +33,10 @@ the extra horizontal space; collage BMP labels show the source filename, with
 the source folder and full mappings available through BMP exports.
 
 The color bar shows 16 local slots when a banked layer is selected. Slot zero
-is always transparent. Painting and shading use slots 0–15. The eyedropper
-samples the active banked layer's local slots. Indexed image brushes must also
+is always transparent in artwork. Painting and shading use slots 0–15. The
+Eyedropper and Alt-pick sample visible artwork across layers, then select an
+exact color match in the active bank. Unavailable colors show a red X cursor
+and leave the selected color unchanged. Indexed image brushes must also
 use local slots. Multiple banked layers can share the same tileset and display
 it using different banks. Editing shared tiles affects every layer using them.
 

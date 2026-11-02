@@ -77,6 +77,7 @@ public:
   }
 
   ui::Cursor* getStandardCursor(ui::CursorType type) override;
+  ui::Cursor* getUnavailableColorCursor();
   void initWidget(ui::Widget* widget) override;
   void getWindowMask(ui::Widget* widget, gfx::Region& region) override;
   int getScrollbarSize() override;

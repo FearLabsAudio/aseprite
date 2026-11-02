@@ -155,7 +155,7 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
     if (doc::force_rgb444(sprite)) {
       for (const auto* original : sprite->getPalettes()) {
         Palette palette(*original);
-        doc::snap_rgb444(palette);
+        doc::snap_rgb444(palette, doc::force_karn_rules(sprite));
         if (palette.countDiff(original, nullptr, nullptr))
           m_post.add(new cmd::SetPalette(sprite, original->frame(), &palette));
       }

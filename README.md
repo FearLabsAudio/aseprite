@@ -66,7 +66,11 @@ Document Palette and Bank 00 have separate colors. Pasting or importing a 16-col
 
 A bank that has never been assigned starts NEW. Its first assignment copies the layer's previous palette colors. If a previously used bank has no other layers assigned, choose Copy Colors or Keep Bank when assigning it again. Banks already shared by other layers keep their colors.
 
+Use the **x** beside an unused bank's swatches to clear its colors and reset it to NEW. Confirm the prompt to clear all frames; the bank keeps its name. Assigned banks cannot be cleared, and Undo restores a cleared bank.
+
 Import a palette with a banked layer selected to update only that bank. To copy colors between banks, select and copy the source swatches, select the destination layer and swatches, then paste. Under Force KARN rules, each palette shown in the color bar stays at 16 slots.
+
+The Eyedropper and **Alt-pick** sample the visible artwork across layers and select an exact match in the active layer's palette bank. A small red X means that color is unavailable; your selected color stays unchanged.
 
 ## VERA colors and KARN rules
 
@@ -75,7 +79,7 @@ The 4-bit checkbox beside the palette Options button enables Force 4 bit color c
 File > Export > KARN > Force KARN rules applies the broader production constraints:
 
 - Indexed artwork using local indices 0-15, with index 0 transparent.
-- RGB444 palette colors across all banks.
+- Fully opaque RGB444 palette colors across all banks. Index 0 remains transparent in artwork, while its color is visible in the palette.
 - 8 x 8 tiles and grid, with H, V, and combined H+V flipping allowed.
 
 Aseprite's diagonal flip is a transpose, not combined H+V, and is excluded. New and converted tilemap layers use the enforced settings automatically.

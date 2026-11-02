@@ -105,12 +105,12 @@ inline int bank_global_index(int bank, int local)
   return local == 0 ? 0 : bank * 16 + local;
 }
 
-inline Palette make_bank_palette(const Palette& source, int bank)
+inline Palette make_bank_palette(const Palette& source, int bank, bool karnColors = false)
 {
   Palette result(source.frame(), 16);
-  result.setEntry(0, 0);
-  for (int i = 1; i < 16; ++i)
-    result.setEntry(i, source.getEntry(bank_global_index(bank, i)));
+  for (int i = 0; i < 16; ++i)
+    result.setEntry(i, karnColors ? rgba_seta(source.getEntry(bank * 16 + i), 255) :
+                                    (i ? source.getEntry(bank * 16 + i) : 0));
   return result;
 }
 
@@ -129,7 +129,8 @@ inline const UserData::Properties* bank_zero_palettes(const Sprite* sprite)
 inline Palette make_bank_palette(const Sprite* sprite, frame_t frame, int bank)
 {
   const auto* source = sprite->palette(frame);
-  Palette result = make_bank_palette(*source, bank);
+  const bool karnColors = force_karn_rules(sprite);
+  Palette result = make_bank_palette(*source, bank, karnColors);
   if (bank != 0) return result;
   const auto* palettes = bank_zero_palettes(sprite);
   if (!palettes) return result;
@@ -145,11 +146,12 @@ inline Palette make_bank_palette(const Sprite* sprite, frame_t frame, int bank)
   }
   if (colors) {
     result.setFrame(latest-1);
-    for (int i = 1; i < 16; ++i) {
+    for (int i = karnColors ? 0 : 1; i < 16; ++i) {
       std::visit([&](const auto& value) {
         using T = std::decay_t<decltype(value)>;
         if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
-          if (value >= 0 && uint64_t(value) <= UINT32_MAX) result.setEntry(i, color_t(value));
+          if (value >= 0 && uint64_t(value) <= UINT32_MAX)
+            result.setEntry(i, karnColors ? rgba_seta(color_t(value), 255) : color_t(value));
       }, static_cast<const UserData::VariantBase&>((*colors)[i]));
     }
   }
@@ -159,8 +161,43 @@ inline Palette make_bank_palette(const Sprite* sprite, frame_t frame, int bank)
 inline UserData::Vector bank_palette_colors(const Palette& palette)
 {
   UserData::Vector colors;
-  for (int i = 0; i < 16; ++i) colors.emplace_back(uint32_t(i ? palette.getEntry(i) : 0));
+  for (int i = 0; i < 16; ++i) colors.emplace_back(uint32_t(palette.getEntry(i)));
   return colors;
+}
+
+// Native user-data colors can be encoded using different integral types.
+// Visit every saved keyframe, including ones without a native palette chunk.
+template<typename Transform>
+inline void transform_bank_zero_colors(UserData::Properties& palettes, Transform transform)
+{
+  for (auto& entry : palettes) {
+    auto* colors = std::get_if<UserData::Vector>(&entry.second);
+    if (!colors || colors->size() != 16) continue;
+    for (auto& color : *colors) {
+      const auto value = std::visit([](const auto& v) -> std::optional<color_t> {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+          if (v >= 0 && uint64_t(v) <= UINT32_MAX) return color_t(v);
+        return std::nullopt;
+      }, static_cast<const UserData::VariantBase&>(color));
+      if (value) color = uint32_t(transform(*value));
+    }
+  }
+}
+
+// Upgrade earlier KARN files on load. Transparency belongs to the image's
+// mask index; palette alpha is not a VERA color channel. RGB cels are untouched.
+inline void normalize_karn_palette_alpha(Sprite* sprite)
+{
+  if (!force_karn_rules(sprite) || sprite->pixelFormat() != IMAGE_INDEXED) return;
+  for (auto* palette : sprite->getPalettes())
+    for (int i = 0; i < palette->size(); ++i)
+      palette->setEntry(i, rgba_seta(palette->getEntry(i), 255));
+  if (const auto* stored = bank_zero_palettes(sprite)) {
+    auto palettes = *stored;
+    transform_bank_zero_colors(palettes, [](color_t c) { return rgba_seta(c, 255); });
+    sprite->userData().properties(kPaletteBankProperties)["bank0Palettes"] = palettes;
+  }
 }
 
 inline bool needs_independent_bank_output(const Sprite* sprite)
@@ -171,7 +208,8 @@ inline bool needs_independent_bank_output(const Sprite* sprite)
   return false;
 }
 
-// Merge a local palette edit without changing any other bank or its reserved slot.
+// Merge a local edit without changing another bank. Under KARN rules even
+// slot zero stores an editable opaque color; pixels still use mask index zero.
 inline Palette merge_bank_palette(const Layer* layer, frame_t frame, const Palette& local)
 {
   if (!layer || (!uses_local_palette(layer) && !force_karn_rules(layer->sprite())))
@@ -180,8 +218,8 @@ inline Palette merge_bank_palette(const Layer* layer, frame_t frame, const Palet
   const int bank = std::max(0, layer->paletteBank());
   if (result.size() < (bank + 1) * 16)
     result.resize((bank + 1) * 16);
-  for (int i = 1; i < 16 && i < local.size(); ++i)
-    result.setEntry(bank_global_index(bank, i), local.getEntry(i));
+  for (int i = force_karn_rules(layer->sprite()) ? 0 : 1; i < 16 && i < local.size(); ++i)
+    result.setEntry(bank * 16 + i, local.getEntry(i));
   return result;
 }
 

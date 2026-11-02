@@ -34,7 +34,7 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
   const bool constrain = constrainChannels && sprite->pixelFormat() == IMAGE_INDEXED &&
                          doc::force_rgb444(sprite);
   if (constrain)
-    doc::snap_rgb444(constrained);
+    doc::snap_rgb444(constrained, force_karn_rules(sprite));
   newPalette = &constrained;
   const Palette* curPalette = sprite->palette(frame);
   if (const auto* stored = bank_zero_palettes(sprite)) m_oldBankZero = *stored;
@@ -44,7 +44,7 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
     if (!m_newBankZero) {
       m_newBankZero.emplace();
       for (const auto* p : sprite->getPalettes())
-        (*m_newBankZero)[std::to_string(p->frame()+1)] = bank_palette_colors(make_bank_palette(*p, 0));
+        (*m_newBankZero)[std::to_string(p->frame()+1)] = bank_palette_colors(*p);
     }
     if (bankZero) {
       const frame_t key = std::max(curPalette->frame(), make_bank_palette(sprite, frame, 0).frame());
@@ -52,13 +52,9 @@ SetPalette::SetPalette(Sprite* sprite, frame_t frame, const Palette* newPalette,
     }
   }
   if (constrain && m_newBankZero) {
-    for (auto& entry : *m_newBankZero) {
-      if (auto* colors = std::get_if<UserData::Vector>(&entry.second)) {
-        for (auto& color : *colors) {
-          if (auto* value = std::get_if<uint32_t>(&color)) *value = doc::snap_rgb444(*value);
-        }
-      }
-    }
+    transform_bank_zero_colors(*m_newBankZero, [sprite](color_t c) {
+      return doc::snap_rgb444(c, force_karn_rules(sprite));
+    });
   }
   m_changeBankZero = !(m_oldBankZero == m_newBankZero);
   if (!m_changeBankZero) {

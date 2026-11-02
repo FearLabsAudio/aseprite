@@ -53,6 +53,7 @@
 #include "app/transaction.h"
 #include "app/tx.h"
 #include "app/ui/doc_view.h"
+#include "app/util/palette_bank.h"
 #include "base/convert_to.h"
 #include "base/fs.h"
 #include "base/gcd.h"
@@ -1101,6 +1102,21 @@ int Sprite_getPaletteBank(lua_State* L)
   return 1;
 }
 
+int Sprite_clearPaletteBank(lua_State* L)
+{
+  auto* sprite = get_docobj<Sprite>(L, 1);
+  const int bank = luaL_checkinteger(L, 2);
+  try {
+    Tx tx(sprite, "Clear palette bank");
+    clear_palette_bank(tx, sprite, bank);
+    tx.commit();
+    return 0;
+  }
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
+  }
+}
+
 int Sprite_get_isValid(lua_State* L)
 {
   lua_pushboolean(L, may_get_docobj<Sprite>(L, 1) ? true : false);
@@ -1117,6 +1133,7 @@ const luaL_Reg Sprite_methods[] = {
   { "loadPalette",       Sprite_loadPalette       },
   { "setPalette",        Sprite_setPalette        },
   { "getPaletteBank",    Sprite_getPaletteBank    },
+  { "clearPaletteBank",  Sprite_clearPaletteBank  },
   { "assignColorSpace",  Sprite_assignColorSpace  },
   { "convertColorSpace", Sprite_convertColorSpace },
   { "flatten",           Sprite_flatten           },

@@ -1967,6 +1967,13 @@ void Editor::updateToolLoopModifiersIndicators(const bool firstFromMouseDown)
 
 app::Color Editor::getColorByPosition(const gfx::Point& mousePos)
 {
+  app::Color color = app::Color::fromMask();
+  pickColorByPosition(mousePos, color);
+  return color;
+}
+
+bool Editor::pickColorByPosition(const gfx::Point& mousePos, app::Color& color)
+{
   Site site = getSite();
   if (site.sprite()) {
     gfx::PointF editorPos = screenToEditorF(mousePos);
@@ -1974,10 +1981,12 @@ app::Color Editor::getColorByPosition(const gfx::Point& mousePos)
     ColorPicker picker;
     site.tilemapMode(TilemapMode::Pixels);
     picker.pickColor(site, editorPos, m_proj, ColorPicker::FromComposition);
-    return picker.color();
+    if (!picker.available()) return false;
+    color = picker.color();
+    return true;
   }
   else
-    return app::Color::fromMask();
+    return false;
 }
 
 doc::tile_t Editor::getTileByPosition(const gfx::Point& mousePos)
@@ -3191,6 +3200,21 @@ void Editor::showMouseCursor(CursorType cursorType, const Cursor* cursor)
 {
   m_brushPreview.hide();
   ui::set_mouse_cursor(cursorType, cursor);
+}
+
+void Editor::showEyedropperCursor(const gfx::Point& pos)
+{
+  auto* theme = SkinTheme::get(this);
+  const Site site = getSite();
+  if (ColorPicker::usesPaletteBank(site)) {
+    ColorPicker picker;
+    picker.pickColor(site, screenToEditorF(pos), m_proj, ColorPicker::FromComposition);
+    if (!picker.available()) {
+      showMouseCursor(kCustomCursor, theme->getUnavailableColorCursor());
+      return;
+    }
+  }
+  showMouseCursor(kCustomCursor, theme->cursors.eyedropper());
 }
 
 void Editor::showBrushPreview(const gfx::Point& screenPos)

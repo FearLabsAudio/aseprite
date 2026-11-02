@@ -27,6 +27,9 @@ public:
 
   ColorPicker();
 
+  // Banked documents pick exact colors into the destination layer's palette.
+  static bool usesPaletteBank(const Site& site);
+
   void pickColor(const Site& site,
                  const gfx::PointF& pos,
                  const render::Projection& proj,
@@ -36,12 +39,14 @@ public:
   doc::tile_t tile() const { return m_tile; }
   int alpha() const { return m_alpha; }
   doc::Layer* layer() const { return m_layer; }
+  bool available() const { return m_available; }
 
 private:
   app::Color m_color;
   doc::tile_t m_tile;
   int m_alpha;
   doc::Layer* m_layer;
+  bool m_available = true;
 };
 
 } // namespace app

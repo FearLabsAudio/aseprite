@@ -10,6 +10,7 @@
 #include "app/cmd/set_pixel_format.h"
 #include "app/cmd/set_tileset_match_flags.h"
 #include "app/cmd/set_transparent_color.h"
+#include "app/cmd/set_user_data.h"
 #include "app/tx.h"
 #include "app/util/cel_ops.h"
 #include "doc/cel.h"
@@ -93,13 +94,21 @@ std::string karn_rules_violation(const Sprite* s, const KarnImageVersions& uncha
   for (const auto* p : s->getPalettes()) {
     if (p->size() < 16 || p->size() > 256 || p->size() % 16)
       return "KARN palettes require complete 16-color banks (up to 256 entries).";
-    for (int i = 0; i < p->size(); ++i)
+    for (int i = 0; i < p->size(); ++i) {
+      if (rgba_geta(p->getEntry(i)) != 255)
+        return "KARN palette colors must be fully opaque; index 0 controls transparency.";
       if (snap_rgb444(p->getEntry(i)) != p->getEntry(i))
         return "KARN rules require 4-bit color channels.";
-    const auto zero = make_bank_palette(s, p->frame(), 0);
-    for (int i = 0; i < 16; ++i)
-      if (snap_rgb444(zero.getEntry(i)) != zero.getEntry(i))
-        return "KARN rules require 4-bit color channels.";
+    }
+  }
+  if (const auto* stored = bank_zero_palettes(s)) {
+    auto palettes = *stored;
+    bool invalid = false;
+    transform_bank_zero_colors(palettes, [&](color_t c) {
+      invalid |= snap_rgb444(c, true) != c;
+      return c;
+    });
+    if (invalid) return "KARN rules require fully opaque 4-bit palette colors.";
   }
   for (const auto* l : s->allTilemaps()) {
     const auto* ts = l->tileset();
@@ -154,14 +163,19 @@ void apply_karn_rules(Tx& tx, Sprite* s)
   for (const auto* p : s->getPalettes()) {
     Palette palette(*p);
     palette.resize(std::max(16, ((p->size() + 15) / 16) * 16));
-    snap_rgb444(palette);
+    snap_rgb444(palette, true);
     if (palette.countDiff(p, nullptr, nullptr))
       tx(new cmd::SetPalette(s, p->frame(), &palette));
-    if (bank_zero_palettes(s)) {
-      auto zero = make_bank_palette(s, p->frame(), 0);
-      const auto before = zero;
-      snap_rgb444(zero);
-      if (zero != before) tx(new cmd::SetPalette(s, p->frame(), &zero, true, true));
+  }
+  // Include independent bank-zero keyframes, even if the native palettes were
+  // deduplicated when saving. Keep this conversion in the enabling undo step.
+  if (const auto* stored = bank_zero_palettes(s)) {
+    auto palettes = *stored;
+    transform_bank_zero_colors(palettes, [](color_t c) { return snap_rgb444(c, true); });
+    if (palettes != *stored) {
+      auto data = s->userData();
+      data.properties(kPaletteBankProperties)["bank0Palettes"] = palettes;
+      tx(new cmd::SetUserData(s, data, static_cast<Doc*>(s->document())));
     }
   }
   const int oldMask = s->transparentColor();

@@ -18,6 +18,38 @@
 #include <set>
 
 namespace app {
+inline void clear_palette_bank(Tx& tx, doc::Sprite* sprite, int bank)
+{
+  if (sprite->pixelFormat() != IMAGE_INDEXED || bank < 0 || bank > 15)
+    throw std::runtime_error("Choose a palette bank from 0-15 in an indexed document.");
+  for (const auto* layer : sprite->allLayers())
+    if (layer->paletteBank() == bank)
+      throw std::runtime_error("This bank is assigned to a layer. Unassign it before clearing it.");
+  const int initialized = doc::initialized_palette_banks(sprite);
+  // Bank zero has independent storage. Never clear the Document Palette.
+  if (bank != 0) {
+    for (const auto* original : sprite->getPalettes()) {
+      doc::Palette cleared(*original);
+      for (int i = bank * 16; i < std::min((bank + 1) * 16, cleared.size()); ++i)
+        cleared.setEntry(i, doc::rgba(0, 0, 0, 255));
+      if (cleared != *original)
+        tx(new cmd::SetPalette(sprite, original->frame(), &cleared));
+    }
+  }
+  auto data = sprite->userData();
+  auto& properties = data.properties(doc::kPaletteBankProperties);
+  if (bank == 0) {
+    doc::Palette cleared(0, 16);
+    for (int i = 0; i < 16; ++i) cleared.setEntry(i, doc::rgba(0, 0, 0, 255));
+    properties["bank0Palettes"] = doc::UserData::Properties{
+      { "1", doc::bank_palette_colors(cleared) }
+    };
+  }
+  properties["initialized"] = int32_t(initialized & ~(1 << bank));
+  if (data.propertiesMaps() != sprite->userData().propertiesMaps())
+    tx(new cmd::SetUserData(sprite, data, static_cast<Doc*>(sprite->document())));
+}
+
 inline bool inherit_bank_colors(doc::Layer* layer, int bank,
                                 const IndexedConversionOptions& options = {})
 {
@@ -31,9 +63,9 @@ inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc
   const auto* palette = layer->sprite()->palette(frame);
   if (inherit_bank_colors(layer, bank, options))
     return layer->paletteBank() >= 0 ? doc::make_bank_palette(layer->sprite(), frame, layer->paletteBank()) :
-                                       doc::make_bank_palette(*palette, 0);
+                                       doc::make_bank_palette(*palette, 0, doc::force_karn_rules(layer->sprite()));
   if (bank >= 0) return doc::make_bank_palette(layer->sprite(), frame, bank);
-  return doc::force_karn_rules(layer->sprite()) ? doc::make_bank_palette(*palette, 0) : *palette;
+  return doc::force_karn_rules(layer->sprite()) ? doc::make_bank_palette(*palette, 0, true) : *palette;
 }
 
 inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
@@ -93,15 +125,15 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
       if (inherit) {
         const auto previous = layer->paletteBank() >= 0 ?
           doc::make_bank_palette(layer->sprite(), original->frame(), layer->paletteBank()) :
-          doc::make_bank_palette(*original, 0);
+          doc::make_bank_palette(*original, 0, doc::force_karn_rules(layer->sprite()));
         if (bank == 0) {
           if (!doc::bank_zero_palettes(layer->sprite()) ||
               doc::make_bank_palette(layer->sprite(), original->frame(), 0) != previous)
             tx(new cmd::SetPalette(layer->sprite(), original->frame(), &previous, true, true));
         }
         else
-          for (int i = 1; i < 16; ++i)
-            expanded.setEntry(doc::bank_global_index(bank, i), previous.getEntry(i));
+          for (int i = doc::force_karn_rules(layer->sprite()) ? 0 : 1; i < 16; ++i)
+            expanded.setEntry(bank * 16 + i, previous.getEntry(i));
       }
       if (expanded != *original)
         tx(new cmd::SetPalette(layer->sprite(), original->frame(), &expanded));

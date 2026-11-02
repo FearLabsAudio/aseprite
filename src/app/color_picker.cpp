@@ -80,6 +80,14 @@ ColorPicker::ColorPicker() : m_tile(doc::notile), m_alpha(0), m_layer(nullptr)
 {
 }
 
+bool ColorPicker::usesPaletteBank(const Site& site)
+{
+  return site.layer() && site.pixelFormat() == IMAGE_INDEXED &&
+         site.tilemapMode() == TilemapMode::Pixels &&
+         (doc::uses_local_palette(site.layer()) || doc::has_palette_banks(site.sprite()) ||
+          doc::bank_zero_palettes(site.sprite()));
+}
+
 void ColorPicker::pickColor(const Site& site,
                             const gfx::PointF& _pos,
                             const render::Projection& proj,
@@ -90,6 +98,13 @@ void ColorPicker::pickColor(const Site& site,
 
   m_alpha = 255;
   m_color = app::Color::fromMask();
+  m_layer = nullptr;
+  m_tile = doc::notile;
+  m_available = true;
+
+  // A banked destination always samples the visible artwork across layers.
+  const bool bankPick = usesPaletteBank(site);
+  if (bankPick) mode = FromComposition;
 
   auto& pref = Preferences::instance();
 
@@ -133,14 +148,40 @@ void ColorPicker::pickColor(const Site& site,
         }
       }
       else if (site.tilemapMode() == TilemapMode::Pixels) {
-        // Preserve the exact local slot when sampling a banked active layer.
-        // Sampling another layer's bank must not feed its global index to paint.
-        if (doc::uses_local_palette(site.layer())) {
-          color_t local;
-          if (site.cel() && get_cel_pixel(site.cel(), pos.x, pos.y, site.frame(), local)) {
-            m_color = app::Color::fromIndex(local);
-            m_layer = const_cast<Layer*>(site.layer());
+        if (bankPick) {
+          // Render RGB so each contributing layer uses its own palette. Never
+          // interpret another bank's local index through the active palette.
+          const color_t sampled = render::get_sprite_pixel(sprite, pos.x, pos.y,
+            site.frame(), proj, pref.experimental.newBlend(),
+            pref.experimental.composeGroups(), IMAGE_RGB);
+          m_alpha = doc::rgba_geta(sampled);
+          const int mask = sprite->transparentColor();
+          if (!m_alpha) {
+            m_color = app::Color::fromIndex(mask);
+            break;
           }
+          const auto* palette = site.palette();
+          const bool karn = doc::force_karn_rules(sprite);
+          const auto matches = [&](int i) {
+            return i >= 0 && i < palette->size() && i != mask &&
+              (karn ? (palette->getEntry(i) & doc::rgba_rgb_mask) == (sampled & doc::rgba_rgb_mask) :
+                      palette->getEntry(i) == sampled);
+          };
+          int index = -1;
+          // Preserve duplicate-color slots when the top pixel shares the
+          // destination bank. Across banks, use the first exact local match.
+          color_t sourceIndex;
+          if (!cels.empty() && m_layer->pixelFormat() == IMAGE_INDEXED &&
+              m_layer->paletteBank() == site.layer()->paletteBank() &&
+              get_cel_pixel(cels.front(), pos.x, pos.y, site.frame(), sourceIndex) &&
+              matches(int(sourceIndex)))
+            index = int(sourceIndex);
+          else
+            for (int i = 0; i < palette->size(); ++i)
+              if (matches(i)) { index = i; break; }
+          m_available = index >= 0;
+          m_color = m_available ? app::Color::fromIndex(index) :
+                                 app::Color::fromImage(IMAGE_RGB, sampled);
           break;
         }
         m_color = app::Color::fromImage(

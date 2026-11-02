@@ -17,9 +17,9 @@ local one=s:newLayer(); one.name='One'
 zero.properties(ns).bank=0; one.properties(ns).bank=1
 local im=Image(8,8,ColorMode.INDEXED); im:clear(3)
 s:newCel(doc,1,im); s:newCel(zero,1,im,Point(8,0))
+app.command.ForceKarnRules{enabled=true,ui=false}
 local before=s:getPaletteBank(0,1)
 local other=s:getPaletteBank(1,1)
-app.command.ForceKarnRules{enabled=true,ui=false}
 app.layer=doc
 app.command.LoadPalette{filename=paletteFile,ui=false}
 assert(p:getColor(3)==Color(255,51,0))

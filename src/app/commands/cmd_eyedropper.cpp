@@ -32,7 +32,7 @@ EyedropperCommand::EyedropperCommand() : Command(CommandId::Eyedropper())
   m_background = false;
 }
 
-void EyedropperCommand::pickSample(const Site& site,
+bool EyedropperCommand::pickSample(const Site& site,
                                    const gfx::PointF& pixelPos,
                                    const render::Projection& proj,
                                    app::Color& color,
@@ -51,12 +51,20 @@ void EyedropperCommand::pickSample(const Site& site,
 
   ColorPicker picker;
   picker.pickColor(site, pixelPos, proj, mode);
+  if (!picker.available()) return false;
+
+  // Picking a bank color selects its local index, regardless of the ordinary
+  // eyedropper channel setting. Converting through RGB can lose duplicate slots.
+  if (ColorPicker::usesPaletteBank(site)) {
+    color = picker.color();
+    return true;
+  }
 
   app::gen::EyedropperChannel channel = pref.eyedropper.channel();
 
   if (site.tilemapMode() == TilemapMode::Tiles) {
     tile = picker.tile();
-    return;
+    return true;
   }
 
   app::Color picked = picker.color();
@@ -160,6 +168,7 @@ void EyedropperCommand::pickSample(const Site& site,
       color = app::Color::fromIndex(picked.getIndex());
       break;
   }
+  return true;
 }
 
 void EyedropperCommand::onLoadParams(const Params& params)
@@ -196,12 +205,6 @@ void EyedropperCommand::executeOnMousePos(Context* context,
   if (!sprite)
     return;
 
-  // Discard current image brush
-  if (Preferences::instance().eyedropper.discardBrush()) {
-    Command* discardBrush = Commands::instance()->byId(CommandId::DiscardBrush());
-    context->executeCommand(discardBrush);
-  }
-
   // Pixel position to get
   gfx::PointF pixelPos = editor->screenToEditorF(mousePos);
 
@@ -212,7 +215,16 @@ void EyedropperCommand::executeOnMousePos(Context* context,
   doc::tile_t tile = (foreground ? pref.colorBar.fgTile() : pref.colorBar.bgTile());
 
   Site site = editor->getSite();
-  pickSample(site, pixelPos, editor->projection(), color, tile);
+  if (!pickSample(site, pixelPos, editor->projection(), color, tile)) {
+    editor->showEyedropperCursor(mousePos);
+    return;
+  }
+
+  // Only successful picks discard an image brush.
+  if (pref.eyedropper.discardBrush()) {
+    Command* discardBrush = Commands::instance()->byId(CommandId::DiscardBrush());
+    context->executeCommand(discardBrush);
+  }
 
   if (site.tilemapMode() == TilemapMode::Tiles) {
     if (foreground)

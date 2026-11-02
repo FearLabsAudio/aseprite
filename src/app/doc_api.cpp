@@ -835,7 +835,7 @@ void DocApi::setPalette(Sprite* sprite, frame_t frame, const Palette* newPalette
 {
   Palette constrained(*newPalette);
   if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-    doc::snap_rgb444(constrained);
+    doc::snap_rgb444(constrained, doc::force_karn_rules(sprite));
   newPalette = &constrained;
   Palette* currentSpritePalette = sprite->palette(frame); // Sprite current pal
   int from, to;

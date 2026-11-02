@@ -17,8 +17,10 @@ inline cmd::SetPalette* make_palette_edit(doc::Layer* layer, doc::frame_t frame,
   doc::Palette edited = zero ? doc::make_bank_palette(sprite, frame, 0) :
                                doc::merge_bank_palette(layer, frame, local);
   if (zero)
-    for (int i = 1; i < 16 && i < local.size(); ++i) edited.setEntry(i, local.getEntry(i));
-  if (sprite->pixelFormat() == doc::IMAGE_INDEXED && doc::force_rgb444(sprite)) doc::snap_rgb444(edited);
+    for (int i = doc::force_karn_rules(sprite) ? 0 : 1; i < 16 && i < local.size(); ++i)
+      edited.setEntry(i, local.getEntry(i));
+  if (sprite->pixelFormat() == doc::IMAGE_INDEXED && doc::force_rgb444(sprite))
+    doc::snap_rgb444(edited, doc::force_karn_rules(sprite));
   const doc::Palette current = zero ? doc::make_bank_palette(sprite, frame, 0) :
                                       *sprite->palette(frame);
   return edited == current ? nullptr : new cmd::SetPalette(sprite, frame, &edited, true, zero);

@@ -28,16 +28,17 @@ inline bool force_rgb444(const Sprite* sprite)
   return false;
 }
 
-inline color_t snap_rgb444(color_t c)
+inline color_t snap_rgb444(color_t c, bool opaque = false)
 {
   const auto snap = [](int channel) { return ((channel + 8) / 17) * 17; };
-  return rgba(snap(rgba_getr(c)), snap(rgba_getg(c)), snap(rgba_getb(c)), rgba_geta(c));
+  return rgba(snap(rgba_getr(c)), snap(rgba_getg(c)), snap(rgba_getb(c)),
+              opaque ? 255 : rgba_geta(c));
 }
 
-inline void snap_rgb444(Palette& palette)
+inline void snap_rgb444(Palette& palette, bool opaque = false)
 {
   for (int i = 0; i < palette.size(); ++i)
-    palette.setEntry(i, snap_rgb444(palette.getEntry(i)));
+    palette.setEntry(i, snap_rgb444(palette.getEntry(i), opaque));
 }
 
 } // namespace doc

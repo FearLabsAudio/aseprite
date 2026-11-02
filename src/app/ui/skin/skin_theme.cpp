@@ -1139,6 +1139,36 @@ Cursor* SkinTheme::getStandardCursor(CursorType type)
     return nullptr;
 }
 
+Cursor* SkinTheme::getUnavailableColorCursor()
+{
+  // Keep the cursor with the theme's other cursors, at the current UI scale.
+  // The outline keeps the small red X readable on both dark and light artwork.
+  const int scale = guiscale();
+  const std::string id = "karn_color_unavailable_" + std::to_string(scale);
+  if (auto* cursor = getCursorById(id)) return cursor;
+  auto surface = os::System::instance()->makeSurface(11 * scale, 11 * scale);
+  os::SurfaceLock lock(surface.get());
+  surface->clear();
+  const auto pixel = [&](int x, int y, gfx::Color color) {
+    for (int dy = 0; dy < scale; ++dy)
+      for (int dx = 0; dx < scale; ++dx)
+        surface->putPixel(color, x * scale + dx, y * scale + dy);
+  };
+  for (int i = 2; i <= 8; ++i)
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        pixel(i + dx, i + dy, gfx::rgba(255, 255, 255, 255));
+        pixel(i + dx, 10 - i + dy, gfx::rgba(255, 255, 255, 255));
+      }
+  for (int i = 2; i <= 8; ++i) {
+    pixel(i, i, gfx::rgba(230, 32, 32, 255));
+    pixel(i, 10 - i, gfx::rgba(230, 32, 32, 255));
+  }
+  auto* cursor = new Cursor(surface, gfx::Point(5 * scale, 5 * scale));
+  m_cursors[id] = cursor;
+  return cursor;
+}
+
 void SkinTheme::initWidget(Widget* widget)
 {
 #define BORDER(n)           widget->setBorder(gfx::Border(n))

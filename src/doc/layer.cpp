@@ -78,7 +78,7 @@ Palette* Layer::palette(frame_t frame) const
   if (bank < 0 && !force_karn_rules(sprite()))
     return sprite()->palette(frame);
   Palette local = bank >= 0 ? make_bank_palette(sprite(), frame, bank) :
-                             make_bank_palette(*sprite()->palette(frame), 0);
+                             make_bank_palette(*sprite()->palette(frame), 0, force_karn_rules(sprite()));
   if (!m_bankPalette)
     m_bankPalette.reset(new Palette(local));
   else if (*m_bankPalette != local)

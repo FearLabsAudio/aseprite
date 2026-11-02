@@ -195,7 +195,11 @@ bool ColorButton::onProcessMessage(Message* msg)
         }
 
         if (colorSource) {
-          color = colorSource->getColorByPosition(mousePos);
+          if (auto* editor = dynamic_cast<Editor*>(colorSource)) {
+            if (!editor->pickColorByPosition(mousePos, color)) break;
+          }
+          else
+            color = colorSource->getColorByPosition(mousePos);
         }
 
         // Did the color change?
@@ -208,6 +212,15 @@ bool ColorButton::onProcessMessage(Message* msg)
     case kSetCursorMessage:
       if (hasCapture()) {
         auto theme = SkinTheme::get(this);
+        const gfx::Point screenPos = ui::get_mouse_position();
+        if (auto* editor = dynamic_cast<Editor*>(manager()->pickFromScreenPos(screenPos))) {
+          app::Color color;
+          const bool available = editor->pickColorByPosition(
+            editor->display()->nativeWindow()->pointFromScreen(screenPos), color);
+          ui::set_mouse_cursor(kCustomCursor, available ? theme->cursors.eyedropper() :
+                                                         theme->getUnavailableColorCursor());
+          return true;
+        }
         ui::set_mouse_cursor(kCustomCursor, theme->cursors.eyedropper());
         return true;
       }

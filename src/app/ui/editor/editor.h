@@ -278,6 +278,7 @@ public:
 
   // Functions to be used in EditorState::onSetCursor()
   void showMouseCursor(ui::CursorType cursorType, const ui::Cursor* cursor = nullptr);
+  void showEyedropperCursor(const gfx::Point& pos);
   void showBrushPreview(const gfx::Point& pos);
 
   // Gets the brush preview controller.
@@ -287,6 +288,7 @@ public:
 
   // IColorSource
   app::Color getColorByPosition(const gfx::Point& pos) override;
+  bool pickColorByPosition(const gfx::Point& pos, app::Color& color);
 
   // ITileSource
   doc::tile_t getTileByPosition(const gfx::Point& pos) override;

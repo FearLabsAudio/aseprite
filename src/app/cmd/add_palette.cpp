@@ -21,7 +21,7 @@ using namespace doc;
 AddPalette::AddPalette(Sprite* sprite, Palette* pal) : WithSprite(sprite), m_palette(*pal)
 {
   if (sprite->pixelFormat() == IMAGE_INDEXED && doc::force_rgb444(sprite))
-    doc::snap_rgb444(m_palette);
+    doc::snap_rgb444(m_palette, doc::force_karn_rules(sprite));
 }
 
 void AddPalette::onExecute()
