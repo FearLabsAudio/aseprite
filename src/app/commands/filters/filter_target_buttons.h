@@ -22,11 +22,13 @@ class ButtonBase;
 namespace app {
 using namespace filters;
 
+enum WithChannels { WithChannelsSelector, WithColorChannelsOnly, WithoutChannelsSelector };
+
 class FilterTargetButtons : public ButtonSet {
 public:
   // Creates a new button to handle "targets" to apply some filter in
   // the a sprite.
-  FilterTargetButtons(int imgtype, bool withChannels);
+  FilterTargetButtons(int imgtype, WithChannels channels);
 
   Target target() const { return m_target; }
   CelsTarget celsTarget() const { return m_celsTarget; }
@@ -44,10 +46,7 @@ protected:
 private:
   void selectTargetButton(Item* item, Target specificTarget);
   void updateFromTarget();
-  void updateFromCelsTarget();
   void updateComponentTooltip(Item* item, const char* channelName, int align);
-  std::string getCelsTargetText() const;
-  std::string getCelsTargetTooltip() const;
 
   Target m_target;
   CelsTarget m_celsTarget;
@@ -57,7 +56,7 @@ private:
   Item* m_alpha;
   Item* m_gray;
   Item* m_index;
-  Item* m_cels;
+  Item* m_scope;
   app::AppTooltipManager m_tooltips;
 };
 

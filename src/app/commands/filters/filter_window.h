@@ -27,7 +27,6 @@ using namespace filters;
 // preview in the current editor.
 class FilterWindow : public WindowWithHand {
 public:
-  enum WithChannels { WithChannelsSelector, WithoutChannelsSelector };
   enum WithTiled { WithTiledCheckBox, WithoutTiledCheckBox };
 
   FilterWindow(const char* title,

@@ -38,7 +38,7 @@ FilterWindow::FilterWindow(const char* title,
   , m_applyButton(Strings::filters_apply())
   , m_cancelButton(Strings::filters_cancel())
   , m_preview(filterMgr)
-  , m_targetButton(filterMgr->pixelFormat(), (withChannels == WithChannelsSelector))
+  , m_targetButton(filterMgr->pixelFormat(), withChannels)
   , m_showPreview(Strings::filters_preview())
   , m_tiledCheck(withTiled == WithTiledCheckBox ? new CheckBox(Strings::filters_tiled()) : nullptr)
 {

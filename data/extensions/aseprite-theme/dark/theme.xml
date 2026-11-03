@@ -51,6 +51,8 @@
         <color id="button_normal_text" value="#c0c0c0"/>
         <color id="button_hot_text" value="#c0c0c0"/>
         <color id="button_selected_text" value="#ffffff"/>
+        <color id="buttonset_selected_face" value="#e1b85f"/>
+        <color id="buttonset_selected_text" value="#202125"/>
         <color id="check_hot_face" value="#575b61"/>
         <color id="check_focus_face" value="#41444a"/>
         <color id="radio_hot_face" value="#575b61"/>
@@ -1077,14 +1079,17 @@
             <background-border part="buttonset_item_pushed" state="capture selected"/>
             <background-border part="buttonset_item_pushed" state="mouse capture"/>
             <background-border part="buttonset_item_focused" state="focus"/>
+            <background color="buttonset_selected_face" state="selected"/>
+            <background color="none" state="disabled"/>
         </style>
         <style id="buttonset_item_icon" extends="buttonset_item">
             <icon/>
             <icon state="disabled" color="disabled"/>
-            <icon state="capture selected" color="button_selected_text"/>
+            <icon state="capture selected" color="buttonset_selected_text"/>
         </style>
         <style id="buttonset_item_icon_mono" extends="buttonset_item_icon">
             <icon color="button_normal_text"/>
+            <icon state="selected" color="buttonset_selected_text"/>
         </style>
         <style id="buttonset_item_icon_active">
             <background-border part="buttonset_item_active"/>
@@ -1094,23 +1099,25 @@
             <background-border part="buttonset_item_active" state="mouse focus"/>
             <background-border part="buttonset_item_active" state="capture"/>
             <background-border part="buttonset_item_active" state="capture selected"/>
+            <background color="buttonset_selected_face"/>
+            <background color="none" state="disabled"/>
         </style>
         <style id="buttonset_item_text" extends="buttonset_item" padding="1">
             <text color="button_normal_text"/>
-            <text color="button_hot_text" state="selected"/>
+            <text color="buttonset_selected_text" state="selected"/>
             <text color="button_hot_text" state="mouse"/>
             <text color="button_selected_text" state="mouse capture"/>
-            <text color="button_selected_text" state="capture selected"/>
+            <text color="buttonset_selected_text" state="capture selected"/>
             <text color="background" x="1" y="1" state="disabled"/>
             <newlayer/>
             <text color="disabled" state="disabled" align="top"/>
         </style>
         <style id="buttonset_item_text_top" extends="buttonset_item">
             <text color="button_normal_text" align="top"/>
-            <text color="button_hot_text" state="selected" align="top"/>
+            <text color="buttonset_selected_text" state="selected" align="top"/>
             <text color="button_hot_text" state="mouse" align="top"/>
             <text color="button_selected_text" state="mouse capture" align="top"/>
-            <text color="button_selected_text" state="capture selected" align="top"/>
+            <text color="buttonset_selected_text" state="capture selected" align="top"/>
             <text color="background" x="1" y="1" state="disabled" align="top"/>
             <newlayer/>
             <text color="disabled" state="disabled" align="top"/>
@@ -1118,7 +1125,7 @@
         <style id="buttonset_item_text_top_icon_bottom" extends="buttonset_item_text_top" padding-top="2" padding-bottom="1">
             <icon align="bottom"/>
             <icon align="bottom" state="disabled" color="disabled"/>
-            <icon align="bottom" state="capture selected" color="button_selected_text"/>
+            <icon align="bottom" state="capture selected" color="buttonset_selected_text"/>
         </style>
         <style id="new_sprite_rgb" extends="buttonset_item_text_top_icon_bottom"/>
         <style id="new_sprite_grayscale" extends="buttonset_item_text_top_icon_bottom"/>
@@ -1132,6 +1139,7 @@
         <style id="brush_type" extends="context_bar_button"/>
         <style id="brush_type_mono" extends="context_bar_button">
             <icon color="button_normal_text"/>
+            <icon state="selected" color="buttonset_selected_text"/>
         </style>
         <style id="ink_type" extends="context_bar_button" padding-left="1"/>
         <style id="dynamics_field" extends="context_bar_button" padding-left="1"/>
@@ -1152,9 +1160,10 @@
         <style id="debugger_button" extends="buttonset_item_icon" width="17" height="19"/>
         <style id="edit_pixels_mode" extends="buttonset_item_icon" width="15">
             <icon color="button_normal_text"/>
+            <icon state="selected" color="buttonset_selected_text"/>
         </style>
         <style id="edit_tiles_mode" extends="buttonset_item_icon_active" width="15">
-            <icon color="button_selected_text"/>
+            <icon color="buttonset_selected_text"/>
         </style>
         <style id="standard_brush" extends="buttonset_item_icon_mono" width="17" height="19"/>
         <style id="outline_cell" extends="buttonset_item_icon" width="17" height="19"/>

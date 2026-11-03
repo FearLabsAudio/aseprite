@@ -100,6 +100,7 @@ bool ButtonSet::Item::onProcessMessage(ui::Message* msg)
         if (mnemonicPressed || (hasFocus() && keymsg->scancode() == kKeySpace)) {
           buttonSet()->onSelectItem(this, true, msg);
           onClick();
+          return true;
         }
       }
       break;

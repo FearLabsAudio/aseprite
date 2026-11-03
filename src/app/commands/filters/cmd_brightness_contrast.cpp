@@ -47,7 +47,7 @@ public:
     : FilterWindow(Strings::brightness_contrast_title().c_str(),
                    ConfigSection,
                    &filterMgr,
-                   WithChannelsSelector,
+                   WithColorChannelsOnly,
                    WithoutTiledCheckBox)
     , m_brightness(-100, 100, int(100.0 * filter.brightness()))
     , m_contrast(-100, 100, int(100.0 * filter.contrast()))

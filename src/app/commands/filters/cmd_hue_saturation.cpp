@@ -57,7 +57,7 @@ public:
     : FilterWindow("Hue/Saturation",
                    ConfigSection,
                    &filterMgr,
-                   WithChannelsSelector,
+                   WithColorChannelsOnly,
                    WithoutTiledCheckBox)
     , m_filter(filter)
     , m_colorType(2)
