@@ -103,9 +103,14 @@ void BrightnessContrastFilter::applyToIndexed(FilterManager* filterMgr)
   // Apply filter to color region
   const Palette* pal = fid->getPalette();
   const RgbMap* rgbmap = fid->getRgbMap();
+  const int transparentIndex = fid->getTransparentIndex();
 
   FILTER_LOOP_THROUGH_ROW_BEGIN(uint8_t)
   {
+    if (*src_address == transparentIndex) {
+      *dst_address = *src_address;
+      continue;
+    }
     color_t c = pal->getEntry(*src_address);
     applyFilterToRgb(target, c);
     *dst_address = rgbmap->mapColor(c);

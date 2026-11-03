@@ -23,6 +23,8 @@ public:
   virtual ~FilterIndexedData() {}
   virtual const doc::Palette* getPalette() const = 0;
   virtual const doc::RgbMap* getRgbMap() const = 0;
+  // The cel's transparent pixel index, or -1 for an opaque background.
+  virtual int getTransparentIndex() const = 0;
 
   // If a filter ask for a new palette, it means that the filter
   // will modify the palette instead of pixels.

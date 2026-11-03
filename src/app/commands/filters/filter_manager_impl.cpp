@@ -434,6 +434,11 @@ const RgbMap* FilterManagerImpl::getRgbMap() const
   return m_cel ? m_cel->layer()->rgbMap(m_site.frame()) : m_site.rgbMap();
 }
 
+int FilterManagerImpl::getTransparentIndex() const
+{
+  return m_cel->layer()->isBackground() ? -1 : int(m_cel->sprite()->transparentColor());
+}
+
 Palette* FilterManagerImpl::getNewPalette()
 {
   if (!m_oldPalette)
@@ -460,7 +465,8 @@ void FilterManagerImpl::init(Cel* cel)
     throw InvalidAreaException();
 
   m_cel = cel;
-  m_src = crop_cel_image(cel, 0);
+  const color_t padding = (pixelFormat() == IMAGE_INDEXED ? cel->sprite()->transparentColor() : 0);
+  m_src = crop_cel_image(cel, padding);
   m_dst.reset(Image::createCopy(m_src.get()));
 
   m_row = -1;

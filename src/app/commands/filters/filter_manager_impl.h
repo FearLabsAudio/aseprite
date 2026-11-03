@@ -128,6 +128,7 @@ public:
   // FilterIndexedData implementation
   const doc::Palette* getPalette() const override;
   const doc::RgbMap* getRgbMap() const override;
+  int getTransparentIndex() const override;
   doc::Palette* getNewPalette() override;
   doc::PalettePicks getPalettePicks() override;
 

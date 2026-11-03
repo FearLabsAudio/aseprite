@@ -278,6 +278,8 @@ doc::ImageRef crop_cel_image(const doc::Cel* cel, const color_t bgcolor)
 
   if (cel->layer()->isTilemap()) {
     doc::ImageRef dstImage(doc::Image::create(sprite->spec()));
+    if (bgcolor != 0)
+      dstImage->clear(bgcolor);
 
     render::Render().renderCel(dstImage.get(),
                                cel,
