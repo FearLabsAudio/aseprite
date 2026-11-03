@@ -40,6 +40,27 @@
 
 namespace app { namespace cmd {
 
+namespace {
+
+bool share_local_slots(const Layer* src, const Layer* dst, frame_t frame)
+{
+  if (!uses_local_palette(src) || !uses_local_palette(dst))
+    return false;
+  if (src->paletteBank() == dst->paletteBank())
+    return true;
+
+  // Slot zero masks the pixel regardless of its stored palette color.
+  const Palette* from = src->palette(frame);
+  const Palette* to = dst->palette(frame);
+  for (int i = 1; i < 16; ++i) {
+    if (from->getEntry(i) != to->getEntry(i))
+      return false;
+  }
+  return true;
+}
+
+} // namespace
+
 FlattenLayers::FlattenLayers(doc::Sprite* sprite,
                              const doc::SelectedLayers& layers0,
                              const Options options)
@@ -166,6 +187,10 @@ void FlattenLayers::onExecute()
                                                 });
       if (!anotherCelExists)
         continue;
+
+      // Keep compatible cels in local slots instead of baking in a display bank offset.
+      if (m_options.mergeDown)
+        render.setPaletteBanksEnabled(!share_local_slots(list.back(), flatLayer, frame));
 
       // Clear the image and render this frame.
       clear_image(image.get(), bgcolor);

@@ -68,3 +68,43 @@ do
   assert(cels[1].image == cels[3].image)
   assert(cels[1].image == cels[4].image)
 end
+
+-- Merge into the destination bank's local indices, including duplicate colors.
+-- Two distinct banks can also have the same palette.
+for _, upperBank in ipairs{3, 4, -1} do
+  local s = Sprite(4, 1, ColorMode.INDEXED)
+  local lower = s.layers[1]
+  local upper = s:newLayer()
+  lower.paletteBank = 3
+  upper.paletteBank = upperBank
+  app.command.ForceKarnRules{enabled=true, ui=false}
+  local pal = s.palettes[1]
+  for _, bank in ipairs{3, math.max(0, upperBank)} do
+    pal:setColor(bank*16+5, red)
+    pal:setColor(bank*16+6, red)
+  end
+  pal:setColor(3*16, blue) -- The stored mask color can differ across banks.
+  local a = Image(4, 1, ColorMode.INDEXED)
+  a:putPixel(0, 0, 5)
+  a:putPixel(3, 0, 5)
+  s:newCel(lower, 1, a)
+  local b = Image(2, 1, ColorMode.INDEXED)
+  b:putPixel(0, 0, 6)
+  s:newCel(upper, 1, b, Point(2, 0))
+  app.layer = upper
+  app.command.MergeDownLayer()
+  local function check()
+    assert(#s.layers == 1 and lower.paletteBank == 3)
+    assert(s.properties('karn.rules.v1').enabled)
+    local merged = lower:cel(1).image
+    for x, expected in ipairs{5, 0, 6, 5} do
+      assert(merged:getPixel(x-1, 0) == expected)
+    end
+  end
+  check()
+  app.undo()
+  assert(#s.layers == 2 and upper:cel(1).image:isEqual(b))
+  app.redo()
+  check()
+  s:close()
+end

@@ -7,6 +7,10 @@
 #include "app/cli/app_options.h"
 #include "app/commands/commands.h"
 #include "app/commands/params.h"
+#ifdef ENABLE_DATA_RECOVERY
+#include "app/crash/read_document.h"
+#include "app/crash/write_document.h"
+#endif
 #include "app/doc_undo.h"
 #include "app/doc.h"
 #include "app/doc_observer.h"
@@ -45,6 +49,37 @@
 using namespace app;
 using namespace doc;
 static const char* g_exeName;
+
+#ifdef ENABLE_DATA_RECOVERY
+TEST(CrashSafety, FailedBackupWriteIsRetriedWithoutAnotherEdit)
+{
+  const auto dir = std::filesystem::path(std::getenv("ASEPRITE_USER_FOLDER")) / "backup";
+  ASSERT_TRUE(std::filesystem::create_directory(dir));
+  Doc document(Sprite::MakeStdSprite(ImageSpec(ColorMode::INDEXED, 8, 8), 16));
+  auto* palette = document.sprite()->palette(0);
+  const auto original = palette->getEntry(1);
+  ASSERT_TRUE(crash::write_document(dir.string(), &document, nullptr));
+
+  const auto edited = rgba(17, 34, 51, 255);
+  palette->setEntry(1, edited);
+  palette->incrementVersion();
+  // Block just this revision's file. The previous backup is still readable.
+  const auto blocked = dir / ("pal-" + std::to_string(palette->id()) + "." +
+                              std::to_string(palette->version()));
+  ASSERT_TRUE(std::filesystem::create_directory(blocked));
+  EXPECT_FALSE(crash::write_document(dir.string(), &document, nullptr));
+  ASSERT_TRUE(std::filesystem::remove(blocked));
+  std::unique_ptr<Doc> previous(crash::read_document(dir.string(), nullptr));
+  ASSERT_TRUE(previous);
+  EXPECT_EQ(original, previous->sprite()->palette(0)->getEntry(1));
+
+  ASSERT_TRUE(crash::write_document(dir.string(), &document, nullptr));
+  std::unique_ptr<Doc> recovered(crash::read_document(dir.string(), nullptr));
+  ASSERT_TRUE(recovered);
+  EXPECT_EQ(edited, recovered->sprite()->palette(0)->getEntry(1));
+  crash::delete_document_internals(&document);
+}
+#endif
 
 TEST(CrashSafety, ConversionWorkerCapturesEveryExceptionAndJoins)
 {

@@ -341,6 +341,8 @@ private:
     fullfn += "." + base::convert_to<std::string>(obj->version());
 
     std::ofstream s(FSTREAM_PATH(fullfn), std::ofstream::binary);
+    if (!s)
+      return false;
     write32(s, 0);                     // Leave a room for the magic number
     if (!(this->*writeMember)(s, obj)) // Write the object
       return false;
@@ -352,6 +354,11 @@ private:
     // Write the magic number
     s.seekp(0);
     write32(s, MAGIC_NUMBER);
+    // Buffered writes (including the completion marker) can fail on close.
+    // Keep the previous revisions and retry this version on the next backup.
+    s.close();
+    if (!s)
+      return false;
 
     // Remove the older version
     if (versions.older() && base::is_file(oldfn))
