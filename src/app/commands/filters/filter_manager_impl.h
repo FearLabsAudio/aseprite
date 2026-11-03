@@ -85,12 +85,14 @@ public:
 
   void setTarget(Target target);
   void setCelsTarget(CelsTarget celsTarget);
+  CelsTarget celsTarget() const { return m_celsTarget; }
+  std::unique_ptr<FilterManagerImpl> makeAllLayersPreview(Context& context);
 
   void begin();
   void beginForPreview();
   void end();
   bool applyStep();
-  void applyToTarget();
+  void applyToTarget(base::task_token* token = nullptr);
 
   void initTransaction();
   void updateWriterThread();

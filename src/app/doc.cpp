@@ -542,7 +542,8 @@ void Doc::resetTransformation()
 void Doc::copyOneLayerContent(const Layer* sourceLayer,
                               Doc* destDoc,
                               Layer* destLayer,
-                              LayerList& childrenToCopy) const
+                              LayerList& childrenToCopy,
+                              bool exactCopy) const
 {
   LayerFlags dstFlags = sourceLayer->flags();
 
@@ -584,11 +585,18 @@ void Doc::copyOneLayerContent(const Layer* sourceLayer,
         newCel->copyNonsharedPropertiesFrom(sourceCel);
       }
       else {
-        newCel.reset(create_cel_copy(nullptr, // TODO add undo information?
-                                     sourceCel,
-                                     destLayer->sprite(),
-                                     destLayer,
-                                     sourceCel->frame()));
+        if (exactCopy) {
+          // The sprite copy already has the same palettes and tilesets.
+          // Preserve pixel indices, tile references and the image mask.
+          newCel.reset(Cel::MakeCopy(sourceCel->frame(), sourceCel));
+          newCel->data()->setUserData(sourceCel->data()->userData());
+          if (sourceLayer->isReference())
+            newCel->setBoundsF(sourceCel->boundsF());
+        }
+        else {
+          newCel.reset(create_cel_copy(nullptr, sourceCel, destLayer->sprite(),
+                                       destLayer, sourceCel->frame()));
+        }
         linked.insert(std::make_pair(sourceCel->data()->id(), newCel.get()));
       }
 
@@ -604,8 +612,6 @@ void Doc::copyOneLayerContent(const Layer* sourceLayer,
 void Doc::copyLayerContent(const Layer* sourceLayer, Doc* destDoc, Layer* destLayer) const
 {
   LayerList childrenToCopy;
-  copyOneLayerContent(sourceLayer, destDoc, destLayer, childrenToCopy);
-
   if (sourceLayer->isTilemap()) {
     // This works out-of-the-box only because we're duplicating a
     // sprite, as the tileset index is exactly the same as the
@@ -614,6 +620,7 @@ void Doc::copyLayerContent(const Layer* sourceLayer, Doc* destDoc, Layer* destLa
     const tileset_index tsi = static_cast<const LayerTilemap*>(sourceLayer)->tilesetIndex();
     static_cast<LayerTilemap*>(destLayer)->setTilesetIndex(tsi);
   }
+  copyOneLayerContent(sourceLayer, destDoc, destLayer, childrenToCopy, true);
 
   // Copy the LayerGroup content (children layer)
   for (const Layer* sourceChild : childrenToCopy) {
@@ -637,6 +644,8 @@ Doc* Doc::duplicate(DuplicateType type) const
   Sprite* spriteCopy = spriteCopyPtr.release();
 
   spriteCopy->setUserData(sourceSprite->userData());
+  spriteCopy->setGridBounds(sourceSprite->gridBounds());
+  spriteCopy->setPixelRatio(sourceSprite->pixelRatio());
   spriteCopy->setTotalFrames(sourceSprite->totalFrames());
   spriteCopy->setTileManagementPlugin(sourceSprite->tileManagementPlugin());
 
@@ -659,7 +668,7 @@ Doc* Doc::duplicate(DuplicateType type) const
   // Copy tilesets
   if (sourceSprite->hasTilesets()) {
     for (Tileset* tileset : *sourceSprite->tilesets()) {
-      auto tilesetCopy = new Tileset(spriteCopy, tileset);
+      auto tilesetCopy = tileset ? new Tileset(spriteCopy, tileset) : nullptr;
       spriteCopy->tilesets()->add(tilesetCopy);
 
       ASSERT(tilesetCopy->sprite() == spriteCopy)
@@ -709,9 +718,9 @@ Doc* Doc::duplicate(DuplicateType type) const
   }
 
   // Copy only some flags
-  documentCopy->m_flags = (m_flags & kMaskVisible);
   documentCopy->setFilename(filename());
   documentCopy->setMask(mask());
+  documentCopy->setMaskVisible(isMaskVisible());
   documentCopy->generateMaskBoundaries();
 
   return documentCopy.release();

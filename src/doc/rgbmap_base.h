@@ -28,7 +28,7 @@ private:
   void rgbToOtherSpace(double& r, double& g, double& b) const;
 
 protected:
-  FitCriteria m_fitCriteria;
+  FitCriteria m_fitCriteria = FitCriteria::DEFAULT;
   const Palette* m_palette = nullptr;
   int m_modifications = 0;
   int m_maskIndex = 0;

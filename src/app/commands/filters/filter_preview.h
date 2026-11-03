@@ -13,11 +13,14 @@
 #include "ui/timer.h"
 #include "ui/widget.h"
 
+#include <exception>
+#include <memory>
 #include <mutex>
 
 namespace app {
 
 class FilterManagerImpl;
+class Context;
 
 // Invisible widget to control a effect-preview in the current editor.
 class FilterPreview : public ui::Widget {
@@ -25,10 +28,9 @@ public:
   FilterPreview(FilterManagerImpl* filterMgr);
   ~FilterPreview();
 
-  void setEnablePreview(bool state);
-
   void stop();
   void restartPreview();
+  void discardDocument();
 
 protected:
   bool onProcessMessage(ui::Message* msg) override;
@@ -42,6 +44,10 @@ private:
   ui::Timer m_restartPreviewTimer;
   std::mutex m_filterMgrMutex;
   app::Task m_filterTask;
+  bool m_started = false;
+  std::unique_ptr<Context> m_previewContext;
+  std::unique_ptr<FilterManagerImpl> m_allLayers;
+  std::exception_ptr m_error;
 };
 
 } // namespace app

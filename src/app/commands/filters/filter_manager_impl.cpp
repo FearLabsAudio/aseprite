@@ -34,9 +34,11 @@
 #include "doc/cels_range.h"
 #include "doc/image.h"
 #include "doc/layer.h"
+#include "doc/layer_list.h"
 #include "doc/mask.h"
 #include "doc/palette.h"
 #include "doc/palette_bank.h"
+#include "doc/rgbmap.h"
 #include "doc/sprite.h"
 #include "filters/filter.h"
 #include "ui/manager.h"
@@ -82,7 +84,8 @@ FilterManagerImpl::~FilterManagerImpl()
 {
   if (m_oldPalette) {
     restoreSpritePalette();
-    set_current_palette(m_oldPalette.get(), false);
+    if (m_reader.context()->isUIAvailable())
+      set_current_palette(m_oldPalette.get(), false);
   }
 }
 
@@ -116,13 +119,37 @@ void FilterManagerImpl::setCelsTarget(CelsTarget celsTarget)
   m_celsTarget = celsTarget;
 }
 
+std::unique_ptr<FilterManagerImpl> FilterManagerImpl::makeAllLayersPreview(Context& context)
+{
+  // Keep the copy for the lifetime of this edit. Each preview runs in an
+  // uncommitted transaction which restores the copy when the preview stops.
+  if (!context.activeDocument()) {
+    auto* copy = context.documents().add(document()->duplicate(DuplicateExactCopy));
+    if (sprite()->pixelFormat() == IMAGE_INDEXED) {
+      // A document can use a non-default nearest-color algorithm and metric.
+      const auto* map = sprite()->rgbMap(frame());
+      copy->sprite()->rgbMap(frame(), sprite()->rgbMapForSprite(),
+                             map->rgbmapAlgorithm(), map->fitCriteria());
+    }
+    const auto index = find_layer_index(sprite()->allLayers(), layer());
+    context.setActiveLayer(copy->sprite()->allLayers()[index]);
+    context.setActiveFrame(frame());
+    context.setSelectedColors(m_site.selectedColors());
+  }
+  auto preview = std::make_unique<FilterManagerImpl>(&context, m_filter);
+  preview->m_site.tilesetMode(m_site.tilesetMode());
+  preview->setTarget(m_targetOrig);
+  preview->setCelsTarget(CelsTarget::All);
+  preview->initTransaction();
+  return preview;
+}
+
 void FilterManagerImpl::begin()
 {
   Doc* document = m_site.document();
 
   m_row = 0;
   m_mask = (document->isMaskVisible() ? document->mask() : nullptr);
-  m_taskToken = &m_noToken; // Don't use the preview token (which can be canceled)
   updateBounds(m_mask);
 }
 
@@ -206,7 +233,7 @@ void FilterManagerImpl::apply()
   bool cancelled = false;
 
   begin();
-  while (!cancelled && applyStep()) {
+  while (!cancelled && !m_taskToken->canceled() && applyStep()) {
     if (m_progressDelegate) {
       // Report progress.
       m_progressDelegate->reportProgress(m_progressBase +
@@ -216,6 +243,9 @@ void FilterManagerImpl::apply()
       cancelled = m_progressDelegate->isCancelled();
     }
   }
+
+  if (m_taskToken->canceled())
+    return;
 
   if (!cancelled) {
     gfx::Rect output;
@@ -256,12 +286,11 @@ void FilterManagerImpl::apply()
 
   ASSERT(m_reader.context());
   m_reader.context()->setCommandResult(result);
-  if (m_site.cel())
-    init(m_site.cel());
 }
 
-void FilterManagerImpl::applyToTarget()
+void FilterManagerImpl::applyToTarget(base::task_token* token)
 {
+  m_taskToken = token ? token : &m_noToken;
   applyToPaletteIfNeeded();
 
   const bool paletteChange = paletteHasChanged();
@@ -303,7 +332,7 @@ void FilterManagerImpl::applyToTarget()
   }
 
   // For each target image
-  for (auto it = cels.begin(); it != cels.end() && !cancelled; ++it) {
+  for (auto it = cels.begin(); it != cels.end() && !cancelled && !m_taskToken->canceled(); ++it) {
     Image* image = (*it)->image();
 
     // Avoid applying the filter two times to the same image
@@ -322,6 +351,11 @@ void FilterManagerImpl::applyToTarget()
 
   // Reset m_oldPalette to avoid restoring the color palette
   m_oldPalette.reset(nullptr);
+  m_bankNewPalette.reset();
+  // Only the real manager is reused for another edit after Apply. Avoid
+  // rebuilding the active cel's canvas after every layer and frame.
+  if (!token && m_site.cel())
+    init(m_site.cel());
 }
 
 void FilterManagerImpl::initTransaction()
@@ -391,9 +425,11 @@ void FilterManagerImpl::disablePreview()
     editor->invalidate();
 
   // Redraw the color bar in case the filter modified the palette.
-  if (paletteHasChanged()) {
+  if (m_oldPalette) {
     restoreSpritePalette();
-    redrawColorPalette();
+    set_current_palette(m_oldPalette.get(), false);
+    m_oldPalette.reset();
+    m_bankNewPalette.reset();
   }
 }
 

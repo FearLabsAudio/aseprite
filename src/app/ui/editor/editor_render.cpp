@@ -15,6 +15,7 @@
 #include "app/pref/preferences.h"
 #include "app/render/shader_renderer.h"
 #include "app/render/simple_renderer.h"
+#include "doc/sprite.h"
 
 namespace app {
 
@@ -132,7 +133,23 @@ void EditorRender::setTransparentBackground()
 
 void EditorRender::setSelectedLayer(const doc::Layer* layer)
 {
-  m_renderer->setSelectedLayer(layer);
+  const auto it = m_previewLayers.find(layer);
+  m_renderer->setSelectedLayer(it == m_previewLayers.end() ? layer : it->second);
+}
+
+void EditorRender::setPreviewSprite(const doc::Sprite* original, const doc::Sprite* preview)
+{
+  m_renderer->setSelectedLayer(nullptr);
+  m_previewLayers.clear();
+  if (original) {
+    const auto layers = original->allLayers();
+    const auto copies = preview->allLayers();
+    ASSERT(layers.size() == copies.size());
+    for (size_t i = 0; i < layers.size(); ++i)
+      m_previewLayers.emplace(layers[i], copies[i]);
+  }
+  m_previewOriginal = original;
+  m_previewSprite = preview;
 }
 
 void EditorRender::setPreviewImage(const doc::Layer* layer,
@@ -180,7 +197,8 @@ void EditorRender::renderSprite(os::Surface* dstSurface,
                                 doc::frame_t frame,
                                 const gfx::ClipF& area)
 {
-  m_renderer->renderSprite(dstSurface, sprite, frame, area);
+  m_renderer->renderSprite(dstSurface, sprite == m_previewOriginal ? m_previewSprite : sprite,
+                           frame, area);
 }
 
 void EditorRender::renderCheckeredBackground(os::Surface* dstSurface,

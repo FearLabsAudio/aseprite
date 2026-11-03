@@ -16,6 +16,7 @@
 #include "app/test_context.h"
 #include "app/commands/commands.h"
 #include "app/commands/params.h"
+#include "app/commands/filters/cels_target.h"
 #include "app/modules/palettes.h"
 #include "app/pref/preferences.h"
 #include "app/ui_context.h"
@@ -23,6 +24,7 @@
 #include "app/ui/palette_view.h"
 #include "app/ui/skin/skin_theme.h"
 #include "app/ui/editor/editor.h"
+#include "app/ui/editor/editor_render.h"
 #include "app/ui/editor/standby_state.h"
 #include "app/tools/active_tool.h"
 #include "app/tools/ink.h"
@@ -33,6 +35,8 @@
 #include "ui/manager.h"
 #include "ui/timer.h"
 #include "os/system.h"
+#include "os/surface.h"
+#include "doc/mask.h"
 #include "doc/image.h"
 #include "doc/palette_bank.h"
 #include "doc/primitives.h"
@@ -176,6 +180,83 @@ TEST(IndexedConversion, BankChangeConvertsAllFramesAndUndoesAsOneEdit)
   EXPECT_EQ(1, layer->paletteBank());
   for (auto* cel : layer->cels())
     EXPECT_EQ(0, count_diff_between_images(converted.get(), cel->image()));
+  document->close();
+  delete document;
+  app.run(false);
+}
+
+TEST(FilterPreview, AllShowsBothPaletteBanksBeforeApply)
+{
+  auto system = os::System::make();
+  const char* argv[] = { g_exeName };
+  AppOptions options(1, argv);
+  App app;
+  app.initialize(options);
+  disable_test_update_check();
+  auto* context = UIContext::instance();
+  auto* document = context->documents().add(3, 1, ColorMode::INDEXED);
+  auto* sprite = document->sprite();
+  auto* lower = sprite->firstLayer();
+  auto* upper = new LayerImage(sprite);
+  sprite->root()->addLayer(upper);
+  lower->userData().properties(kPaletteBankProperties)["bank"] = uint8_t(0);
+  upper->userData().properties(kPaletteBankProperties)["bank"] = uint8_t(1);
+  auto* palette = sprite->palette(0);
+  palette->resize(32);
+  for (int i = 0; i < 32; ++i)
+    palette->setEntry(i, rgba(0, 0, 0, 255));
+  palette->setEntry(1, rgba(0, 68, 0, 255));
+  palette->setEntry(2, rgba(0, 102, 0, 255));
+  palette->setEntry(17, rgba(68, 0, 0, 255));
+  palette->setEntry(19, rgba(102, 0, 0, 255));
+  lower->cel(0)->image()->clear(1);
+  ImageRef top(Image::create(IMAGE_INDEXED, 3, 1));
+  top->putPixel(1, 0, 1);
+  upper->addCel(new Cel(0, top));
+  Mask mask;
+  mask.replace(gfx::Rect(0, 0, 2, 1));
+  document->setMask(&mask);
+  context->setActiveLayer(upper);
+  auto& target = Preferences::instance().filters.celsTarget;
+  const auto previousTarget = target();
+  target(CelsTarget::All);
+
+  auto surface = system->makeRgbaSurface(3, 1);
+  auto draw = [&] {
+    auto& engine = Editor::renderEngine();
+    engine.setProjection(render::Projection());
+    engine.setNonactiveLayersOpacity(255);
+    engine.setSelectedLayer(upper);
+    engine.renderSprite(surface.get(), sprite, 0, gfx::Clip(0, 0, sprite->bounds()));
+  };
+  const auto history = document->undoHistory()->currentState();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  ui::Timer poll(10);
+  poll.Tick.connect([&] {
+    draw();
+    if (surface->getPixel(0, 0) != gfx::rgba(0, 102, 0) &&
+        std::chrono::steady_clock::now() < deadline)
+      return;
+    poll.stop();
+    EXPECT_EQ(gfx::rgba(0, 102, 0), surface->getPixel(0, 0));
+    EXPECT_EQ(gfx::rgba(102, 0, 0), surface->getPixel(1, 0));
+    EXPECT_EQ(gfx::rgba(0, 68, 0), surface->getPixel(2, 0)); // Outside the marquee.
+    EXPECT_EQ(1, lower->cel(0)->image()->getPixel(0, 0));
+    EXPECT_EQ(1, upper->cel(0)->image()->getPixel(1, 0));
+    EXPECT_EQ(history, document->undoHistory()->currentState());
+    ui::Manager::getDefault()->getTopWindow()->closeWindow(nullptr);
+  });
+  Params params;
+  params.set("brightness", "50");
+  poll.start();
+  context->executeCommand(Commands::instance()->byId("BrightnessContrast"), params);
+  EXPECT_FALSE(poll.isRunning());
+  poll.stop();
+  draw();
+  EXPECT_EQ(gfx::rgba(0, 68, 0), surface->getPixel(0, 0));
+  EXPECT_EQ(gfx::rgba(68, 0, 0), surface->getPixel(1, 0));
+  EXPECT_EQ(history, document->undoHistory()->currentState());
+  target(previousTarget);
   document->close();
   delete document;
   app.run(false);

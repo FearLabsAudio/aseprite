@@ -12,8 +12,11 @@
 #include "app/commands/filters/filter_preview.h"
 
 #include "app/commands/filters/filter_manager_impl.h"
+#include "app/console.h"
+#include "app/modules/palettes.h"
 #include "app/ui/editor/editor.h"
 #include "app/ui/editor/editor_render.h"
+#include "app/ui_context.h"
 #include "base/thread.h"
 #include "doc/layer.h"
 #include "doc/sprite.h"
@@ -35,8 +38,8 @@ FilterPreview::FilterPreview(FilterManagerImpl* filterMgr)
   setVisible(false);
 
   m_restartPreviewTimer.Tick.connect([this] {
-    onDelayedStartPreview();
     m_restartPreviewTimer.stop();
+    onDelayedStartPreview();
   });
 }
 
@@ -45,41 +48,38 @@ FilterPreview::~FilterPreview()
   stop();
 }
 
-void FilterPreview::setEnablePreview(bool state)
+void FilterPreview::discardDocument()
 {
-  if (state) {
-    Editor::renderEngine().setPreviewImage(
-      m_filterMgr->layer(),
-      m_filterMgr->frame(),
-      m_filterMgr->destinationImage(),
-      nullptr,
-      m_filterMgr->position(),
-      static_cast<doc::LayerImage*>(m_filterMgr->layer())->blendMode());
-  }
-  else {
-    Editor::renderEngine().removePreviewImage();
-  }
+  stop();
+  m_previewContext.reset();
 }
 
 void FilterPreview::stop()
 {
-  // Cancel the token (so the filter processing stops immediately)
+  m_restartPreviewTimer.stop();
+  m_timer.stop();
+  if (!m_started)
+    return;
+
   m_filterTask.cancel();
-
-  // Stop the filter and timer to flush changes to the screen.
-  {
-    std::scoped_lock lock(m_filterMgrMutex);
-    if (m_timer.isRunning()) {
-      ASSERT(m_filterMgr);
-      m_filterMgr->end();
-    }
-    m_timer.stop();
-    m_restartPreviewTimer.stop();
-  }
-
-  // Wait the filter task to end.
-  if (m_filterTask.running())
+  // An enqueued job also owns references to the filter and preview document.
+  if (!m_filterTask.completed())
     m_filterTask.wait();
+
+  auto& render = Editor::renderEngine();
+  if (m_allLayers) {
+    render.setPreviewSprite(nullptr, nullptr);
+    m_allLayers->updateWriterThread();
+    m_allLayers.reset(); // Roll back the private document for the next slider value.
+    set_current_palette(m_filterMgr->layer()->palette(m_filterMgr->frame()), false);
+  }
+  else {
+    render.removePreviewImage();
+    m_filterMgr->end();
+  }
+  m_filterMgr->disablePreview();
+  m_error = nullptr;
+  m_started = false;
 }
 
 void FilterPreview::restartPreview()
@@ -100,46 +100,80 @@ void FilterPreview::restartPreview()
 
 void FilterPreview::onDelayedStartPreview()
 {
-  // Start the filter for preview purposes and the timer to flush the
-  // preview to the editor/display.
-  m_filterMgr->beginForPreview();
-  m_timer.start();
-
-  if (!m_filterTask.running()) {
-    // Re-start the task to apply the filter step by step
+  try {
+    if (m_filterMgr->celsTarget() == CelsTarget::All) {
+      if (!m_previewContext)
+        m_previewContext = std::make_unique<Context>();
+      m_allLayers = m_filterMgr->makeAllLayersPreview(*m_previewContext);
+    }
+    else {
+      m_filterMgr->beginForPreview();
+      Editor::renderEngine().setPreviewImage(
+        m_filterMgr->layer(), m_filterMgr->frame(), m_filterMgr->destinationImage(),
+        nullptr, m_filterMgr->position(), m_filterMgr->layer()->blendMode());
+    }
     m_filterTask.run([this](base::task_token& token) {
-      m_filterMgr->setTaskToken(token);
-      onFilterTask(token);
+      try {
+        if (m_allLayers) {
+          m_allLayers->updateWriterThread();
+          m_allLayers->applyToTarget(&token);
+        }
+        else {
+          m_filterMgr->setTaskToken(token);
+          onFilterTask(token);
+        }
+      }
+      catch (...) {
+        m_error = std::current_exception();
+      }
     });
+    m_started = true;
+    m_timer.start();
   }
-  else {
-    // Is it possible to happen? We cancel the token, the task is
-    // still running, we don't launch it again, and we are here.
-    ASSERT(false);
+  catch (const std::exception& e) {
+    m_allLayers.reset();
+    m_previewContext.reset();
+    Editor::renderEngine().removePreviewImage();
+    Console::showException(e);
   }
 }
 
 bool FilterPreview::onProcessMessage(Message* msg)
 {
   switch (msg->type()) {
-    case kOpenMessage: setEnablePreview(true); break;
-
-    case kCloseMessage:
-      setEnablePreview(false);
-
-      // Stop the preview timer.
-      {
-        std::scoped_lock lock(m_filterMgrMutex);
-        m_timer.stop();
-      }
-      break;
+    case kCloseMessage: stop(); break;
 
     case kTimerMessage: {
-      std::scoped_lock lock(m_filterMgrMutex);
-      if (m_filterMgr) {
+      if (!m_started)
+        break;
+      if (!m_allLayers) {
+        std::scoped_lock lock(m_filterMgrMutex);
         m_filterMgr->flush();
-        if (m_filterTask.completed())
-          m_timer.stop();
+      }
+      if (m_filterTask.completed()) {
+        m_timer.stop();
+        if (m_error) {
+          auto error = m_error;
+          discardDocument();
+          try {
+            std::rethrow_exception(error);
+          }
+          catch (const std::exception& e) {
+            Console::showException(e);
+          }
+          catch (...) {
+            Console().printf("Unable to preview this filter.\n");
+          }
+        }
+        else if (m_allLayers) {
+          // Publish only a completed result. Editors of other sprites keep
+          // rendering their own documents.
+          Editor::renderEngine().setPreviewSprite(m_filterMgr->sprite(), m_allLayers->sprite());
+          set_current_palette(m_allLayers->layer()->palette(m_allLayers->frame()), false);
+          for (auto* editor :
+               UIContext::instance()->getAllEditorsIncludingPreview(m_filterMgr->document()))
+            editor->invalidate();
+        }
       }
       break;
     }

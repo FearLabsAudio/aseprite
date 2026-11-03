@@ -21,6 +21,8 @@
 #include "render/onionskin_options.h"
 #include "render/projection.h"
 
+#include <map>
+
 namespace doc {
 class Cel;
 class Image;
@@ -63,6 +65,7 @@ public:
   void setTransparentBackground();
 
   void setSelectedLayer(const doc::Layer* layer);
+  void setPreviewSprite(const doc::Sprite* original, const doc::Sprite* preview);
 
   void setPreviewImage(const doc::Layer* layer,
                        const doc::frame_t frame,
@@ -102,6 +105,9 @@ public:
 
 private:
   std::unique_ptr<Renderer> m_renderer;
+  const doc::Sprite* m_previewOriginal = nullptr;
+  const doc::Sprite* m_previewSprite = nullptr;
+  std::map<const doc::Layer*, const doc::Layer*> m_previewLayers;
 };
 
 } // namespace app

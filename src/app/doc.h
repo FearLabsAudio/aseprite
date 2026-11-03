@@ -254,7 +254,8 @@ public:
   void copyOneLayerContent(const Layer* sourceLayer,
                            Doc* destDoc,
                            Layer* destLayer,
-                           LayerList& childrenToCopy) const;
+                           LayerList& childrenToCopy,
+                           bool exactCopy = false) const;
   Doc* duplicate(DuplicateType type) const;
 
   void close();

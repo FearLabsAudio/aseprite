@@ -134,10 +134,7 @@ bool FilterWindow::doModal()
 
 void FilterWindow::restartPreview()
 {
-  bool state = m_showPreview.isSelected();
-  m_preview.setEnablePreview(state);
-
-  if (state)
+  if (m_showPreview.isSelected())
     m_preview.restartPreview();
   else
     stopPreview();
@@ -153,7 +150,7 @@ void FilterWindow::setNewTarget(Target target)
 
 void FilterWindow::apply()
 {
-  stopPreview();
+  m_preview.discardDocument();
 
   // Apply the filter in background
   m_filterMgr->startWorker(true);
@@ -188,11 +185,6 @@ void FilterWindow::onCancel()
 void FilterWindow::onShowPreview()
 {
   restartPreview();
-
-  // If the preview was disabled just redraw the current editor in its
-  // original state.
-  if (!m_showPreview.isSelected())
-    m_filterMgr->disablePreview();
 }
 
 // Called when the user changes the target-buttons.
@@ -226,12 +218,14 @@ void FilterWindow::stopPreview()
 
 void FilterWindow::onScrollChanged(Editor* editor)
 {
-  restartPreview();
+  if (m_filterMgr->celsTarget() == CelsTarget::Selected)
+    restartPreview();
 }
 
 void FilterWindow::onZoomChanged(Editor* editor)
 {
-  restartPreview();
+  if (m_filterMgr->celsTarget() == CelsTarget::Selected)
+    restartPreview();
 }
 
 } // namespace app
