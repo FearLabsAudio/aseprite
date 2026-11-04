@@ -267,6 +267,9 @@ private:
   bool m_fromBgButton;
 
   std::unique_ptr<doc::Palette> m_oldPalette;
+  int m_oldPaletteBank = -1;
+  doc::frame_t m_oldPaletteFrame = 0;
+  bool m_oldPaletteScoped = false;
   std::unique_ptr<doc::Tileset> m_oldTileset;
   Doc* m_lastDocument;
   doc::ObjectId m_lastTilesetId;

@@ -16,6 +16,7 @@
 #include "doc/image.h"
 #include "doc/layer.h"
 #include "doc/mask.h"
+#include "doc/palette_bank.h"
 #include "doc/primitives.h"
 #include "render/render.h"
 
@@ -44,7 +45,9 @@ doc::Image* new_image_from_mask(const Site& site,
   ASSERT(srcMaskBitmap);
   ASSERT(!srcBounds.isEmpty());
 
-  std::unique_ptr<Image> dst(Image::create(site.pixelFormat(), srcBounds.w, srcBounds.h));
+  const PixelFormat format = merged && composed_output_requires_rgb(srcSprite) ?
+    IMAGE_RGB : site.pixelFormat();
+  std::unique_ptr<Image> dst(Image::create(format, srcBounds.w, srcBounds.h));
   if (!dst)
     return nullptr;
 

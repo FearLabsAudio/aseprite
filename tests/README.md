@@ -7,6 +7,20 @@ It checks rollback, a single commit attempt, subsequent editing, undo/redo,
 save/reopen, and preset-file preservation. It creates its own temporary user
 profile, so running it does not modify your preferences or saved presets.
 
+The `palette_remap_ui_tests` native target exercises the real Remap Palette
+button, bank/document scope, pending snapshots, undo/redo, cross-bank linked
+data, RGB reference exclusion, and the stock indexed path. It also uses an
+isolated user profile. `scripts/palette_bank_remap.lua` checks every numbered
+bank with KARN rules on/off, all-frame remapping, shared tilesets, nearest-color
+matching, rollback, and save/reopen through the same remapping implementation.
+
+`palette_bank_operations_ui_tests` checks palette move/copy commands, their
+remap button, and resizing cel data linked across banks. The Lua scripts
+`palette_bank_operations.lua`, `palette_bank_resize.lua`, and
+`palette_bank_copy_merged.lua` cover all numbered banks, fixed-size color copies,
+smooth resizing, shared tilesets, selection and cel-image exports, merged RGB
+copies, default paste positions, reference alpha, and undo/redo.
+
 The Windows setup/build scripts have a separate test suite that uses the
 PowerShell included with Windows 11. From the repository root, run:
 

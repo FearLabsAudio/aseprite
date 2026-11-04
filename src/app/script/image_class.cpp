@@ -38,6 +38,7 @@
 #include "doc/cel.h"
 #include "doc/image.h"
 #include "doc/image_ref.h"
+#include "doc/layer.h"
 #include "doc/primitives.h"
 #include "doc/sprite.h"
 #include "render/render.h"
@@ -444,7 +445,7 @@ int Image_saveAs(lua_State* L)
   auto obj = get_obj<ImageObj>(L, 1);
   Image* img = obj->image(L);
   Cel* cel = obj->cel(L);
-  Palette* pal = (cel ? cel->sprite()->palette(cel->frame()) : nullptr);
+  Palette* pal = (cel ? cel->layer()->palette(cel->frame()) : nullptr);
   std::string fn;
   bool result = false;
 
@@ -458,7 +459,7 @@ int Image_saveAs(lua_State* L)
     lua_pop(L, 1);
 
     // Image:saveAs{ palette }
-    lua_getfield(L, 2, "palette");
+    type = lua_getfield(L, 2, "palette");
     if (type != LUA_TNIL) {
       if (auto pal0 = get_palette_from_arg(L, -1))
         pal = pal0;

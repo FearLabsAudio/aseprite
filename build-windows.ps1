@@ -65,7 +65,7 @@ function Invoke-KarnBuild {
     Import-Module (Join-Path $config.visualStudio 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $config.visualStudio -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Host
     $env:Path = (Split-Path $config.git) + ';' + $env:Path
-    $compiler = Get-Command cl.exe -CommandType Application -ErrorAction SilentlyContinue
+    $compiler = Get-Command cl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $compiler) {
         throw 'The Microsoft C++ compiler could not be loaded. Rerun prepare-windows.ps1.'
     }

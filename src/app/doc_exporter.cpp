@@ -343,7 +343,7 @@ public:
       return m_image;
 
     ImageRef render(
-      Image::create(needs_independent_bank_output(m_sprite) ? IMAGE_RGB : m_sprite->pixelFormat(),
+      Image::create(composed_output_requires_rgb(m_sprite) ? IMAGE_RGB : m_sprite->pixelFormat(),
                     m_trimmedBounds.w, m_trimmedBounds.h, imageBuf));
     render->setMaskColor(m_sprite->transparentColor());
     clear_image(render.get(), m_sprite->transparentColor());
@@ -1345,7 +1345,7 @@ Doc* DocExporter::createEmptyTexture(const Samples& samples, base::task_token& t
     // palettes, we've to use RGB format.
     if (colorMode == ColorMode::INDEXED) {
       if (sample.sprite()->colorMode() != ColorMode::INDEXED ||
-          needs_independent_bank_output(sample.sprite())) {
+          composed_output_requires_rgb(sample.sprite())) {
         colorMode = ColorMode::RGB;
       }
       else if (sample.sprite()->getPalettes().size() > 1) {

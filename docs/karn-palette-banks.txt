@@ -124,8 +124,42 @@ assignment and palette edits. No per-tile-placement override exists yet.
 Stock Aseprite ignores this custom metadata and displays banked local pixels
 using the first palette bank. Export a PNG/sprite sheet for ordinary viewers.
 Converting between tilemap and ordinary layers now preserves the bank and local
-indices. Export a composed image for conversion to another color mode. Global
-RGB-based palette remapping is disabled while banked layers exist.
+indices. Export a composed image for conversion to another color mode.
+
+Remap Palette matches old colors to the active palette with stock Aseprite's
+exact-match/nearest-color algorithm. Numbered banks remap local indices in every
+frame of all layers using that bank; Document Palette remaps unbanked indexed
+layers. Full color Reference pixels are excluded. Scoped remaps retain the mask
+index, including fixed slot 0 in numbered banks. Shared tilesets are copied for
+the affected scope when necessary; tile IDs, flip flags and metadata are retained.
+The palette edit and pixel remap are separate undo steps. Changing palette scopes
+or frames, undo/redo, or selecting RGB reference artwork clears a pending remap.
+Ordinary indexed documents continue to use the stock global remap operation.
+
+Scripts can use sprite:remapPalette(previousPalette, bank, frame), with bank -1
+for Document Palette or 0-15 for a numbered bank. Omitted bank/frame arguments
+default to Document Palette/frame 1. The chosen frame supplies the current
+palette for matching; matching pixel indices are rewritten across all frames,
+like stock remapping. Keep previousPalette as a detached Palette copy before
+changing colors. This scripting operation always retains the transparent index.
+
+MoveColors and CopyColors use the active layer palette and offer Remap Palette.
+In a fixed 16-slot bank, CopyColors replaces destination swatches without growing
+the palette; a copy that does not fit is rejected. Ordinary document palettes
+retain stock insertion behavior. These edits leave other banks and local pixel
+indices unchanged until the user remaps them.
+
+Smooth resizing uses layer-local palettes/maps, including independent Bank 00
+colors. Shared tilesets and cross-bank linked cel data are separated by bank
+when smoothing needs different index mappings. Nearest-neighbor keeps sharing.
+Tile IDs, flip flags, names, base indices, match flags and tile metadata survive
+resizing. KARN's existing 8x8 tileset restriction still applies.
+
+New Sprite from Selection and cel.image:saveAs() attach the selected layer's
+palette to local indices, including tilemap cels. An explicitly supplied export
+palette takes precedence. Merged copies use RGB when independent Bank 00 colors
+or full-color references require it; bank colors, alpha and selection origins
+survive pasting into RGB artwork or full-color reference layers.
 
 Exports
 

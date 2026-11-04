@@ -16,6 +16,7 @@
 
 #include "app/ui/color_bar.h"
 #include "app/util/palette_edit.h"
+#include "app/util/palette_remap.h"
 
 #include "app/app.h"
 #include "app/app_menus.h"
@@ -227,6 +228,7 @@ ColorBar::ColorBar(TooltipManager* tooltipManager)
   m_scrollableTilesView.setVisible(false);
   m_tilesHelpers.setVisible(false);
   m_remapPalButton.setVisible(false);
+  m_remapPalButton.setId("remap_palette");
   m_remapTilesButton.setVisible(false);
 
   m_splitterPalTil.addChild(&m_scrollablePalView);
@@ -688,7 +690,11 @@ void ColorBar::onResize(ui::ResizeEvent& ev)
 void ColorBar::onActiveSiteChange(const Site& site)
 {
   setPixelFormat(site.pixelFormat());
-  if (site.sprite() && doc::has_palette_banks(site.sprite()))
+  if (m_oldPalette &&
+      (!site.layer() || site.pixelFormat() != IMAGE_INDEXED ||
+       site.layer()->paletteBank() != m_oldPaletteBank ||
+       (m_oldPaletteScoped && site.frame() != m_oldPaletteFrame) ||
+       uses_scoped_palette_remap(site.sprite()) != m_oldPaletteScoped))
     hideRemapPal();
   if (m_lastDocument != site.document()) {
     if (m_lastDocument)
@@ -798,6 +804,8 @@ void ColorBar::onBeforeExecuteCommand(CommandExecutionEvent& ev)
 {
   if (ev.command()->id() == CommandId::SetPalette() ||
       ev.command()->id() == CommandId::LoadPalette() ||
+      ev.command()->id() == CommandId::MoveColors() ||
+      ev.command()->id() == CommandId::CopyColors() ||
       ev.command()->id() == CommandId::ColorQuantization()) {
     showRemapPal();
   }
@@ -806,7 +814,10 @@ void ColorBar::onBeforeExecuteCommand(CommandExecutionEvent& ev)
 void ColorBar::onAfterExecuteCommand(CommandExecutionEvent& ev)
 {
   if (ev.command()->id() == CommandId::Undo() || ev.command()->id() == CommandId::Redo())
+  {
+    hideRemapPal();
     invalidate();
+  }
 
   // If the sprite isn't Indexed anymore (e.g. because we've just
   // undone a "RGB -> Indexed" conversion), we hide the "Remap
@@ -819,7 +830,7 @@ void ColorBar::onAfterExecuteCommand(CommandExecutionEvent& ev)
     m_force4BitButton.setVisible(indexed);
     layout();
   }
-  if (site.sprite() && site.sprite()->pixelFormat() != IMAGE_INDEXED) {
+  if (!site.sprite() || site.pixelFormat() != IMAGE_INDEXED) {
     hideRemapPal();
   }
 
@@ -892,8 +903,29 @@ void ColorBar::onTilesetModeButtonRightClick()
 void ColorBar::onRemapPalButtonClick()
 {
   const auto bankSite = UIContext::instance()->activeSite();
-  if (bankSite.sprite() && doc::has_palette_banks(bankSite.sprite())) {
+  if (!m_oldPalette || !bankSite.layer() || bankSite.pixelFormat() != IMAGE_INDEXED ||
+      bankSite.layer()->paletteBank() != m_oldPaletteBank ||
+      (m_oldPaletteScoped && bankSite.frame() != m_oldPaletteFrame) ||
+      uses_scoped_palette_remap(bankSite.sprite()) != m_oldPaletteScoped) {
     hideRemapPal();
+    return;
+  }
+  if (m_oldPaletteScoped) {
+    try {
+      // Notifications from the transaction can invalidate the pending snapshot.
+      const Palette previous(*m_oldPalette);
+      const Palette current(*bankSite.palette());
+      InlineCommandExecution inlineCmd(UIContext::instance());
+      ContextWriter writer(UIContext::instance());
+      Tx tx(writer, "Remap Palette", ModifyDocument);
+      remap_palette_bank(tx, writer.sprite(), m_oldPaletteBank, previous, current);
+      tx.commit();
+      hideRemapPal();
+      update_screen_for_document(writer.document());
+    }
+    catch (const std::exception& e) {
+      Console::showException(e);
+    }
     return;
   }
   ASSERT(m_oldPalette);
@@ -1626,11 +1658,12 @@ void ColorBar::setAscending(bool ascending)
 void ColorBar::showRemapPal()
 {
   Site site = UIContext::instance()->activeSite();
-  if (site.sprite() && doc::has_palette_banks(site.sprite()))
-    return;
-  if (site.sprite() && site.sprite()->pixelFormat() == IMAGE_INDEXED) {
+  if (site.sprite() && site.layer() && site.pixelFormat() == IMAGE_INDEXED) {
     if (!m_oldPalette) {
       m_oldPalette.reset(new Palette(*get_current_palette()));
+      m_oldPaletteBank = site.layer()->paletteBank();
+      m_oldPaletteFrame = site.frame();
+      m_oldPaletteScoped = uses_scoped_palette_remap(site.sprite());
       m_remapPalButton.setVisible(true);
       layout();
     }

@@ -23,9 +23,7 @@ class RgbMap;
 namespace app {
 class Tx;
 
-// The "image" parameter can be modified with
-// doc::algorithm::fixup_image_transparent_colors() function if
-// it's needed.
+// Transparent-color preparation for smooth resizing uses a private source copy.
 doc::Image* resize_image(doc::Image* image,
                          const gfx::SizeF& scale,
                          const doc::algorithm::ResizeMethod method,

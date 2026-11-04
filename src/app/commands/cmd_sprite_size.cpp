@@ -10,6 +10,10 @@
 #endif
 
 #include "app/cmd/replace_tileset.h"
+#include "app/cmd/add_tileset.h"
+#include "app/cmd/set_layer_tileset.h"
+#include "app/cmd/set_cel_data.h"
+#include "app/cmd/unlink_cel.h"
 #include "app/cmd/set_cel_bounds.h"
 #include "app/cmd/set_slice_key.h"
 #include "app/commands/command.h"
@@ -39,6 +43,9 @@
 #include "sprite_size.xml.h"
 
 #include <algorithm>
+#include <map>
+#include <memory>
+#include <vector>
 
 #define PERC_FORMAT "%.4g"
 
@@ -112,6 +119,26 @@ protected:
     DocApi api = document()->getApi(tx);
     Tilesets* tilesets = sprite()->tilesets();
 
+    // Linked cels normally stay within one layer. If data is shared across
+    // banks, smooth resizing can require different indices for each bank.
+    if (m_resize_method != doc::algorithm::RESIZE_METHOD_NEAREST_NEIGHBOR) {
+      std::map<ObjectId, std::map<int, std::vector<Cel*>>> groups;
+      for (auto* layer : sprite()->allLayers()) {
+        if (!layer->isImage() || layer->isTilemap()) continue;
+        for (auto* cel : layer->cels()) groups[cel->dataId()][layer->paletteBank()].push_back(cel);
+      }
+      for (const auto& data : groups) {
+        bool first = true;
+        for (const auto& bank : data.second) {
+          if (first) { first = false; continue; }
+          auto* anchor = bank.second.front();
+          tx(new cmd::UnlinkCel(anchor));
+          for (size_t i = 1; i < bank.second.size(); ++i)
+            tx(new cmd::SetCelData(bank.second[i], anchor->dataRef()));
+        }
+      }
+    }
+
     int img_count = 0;
     if (tilesets) {
       for (Tileset* tileset : *tilesets) {
@@ -130,7 +157,8 @@ protected:
 
     // Resize tilesets
     if (tilesets) {
-      for (tileset_index tsi = 0; tsi < tilesets->size(); ++tsi) {
+      const auto originalCount = tilesets->size();
+      for (tileset_index tsi = 0; tsi < originalCount; ++tsi) {
         Tileset* tileset = tilesets->get(tsi);
         if (!tileset)
           continue;
@@ -143,28 +171,55 @@ protected:
         if (newGridSize.h < 1)
           newGridSize.h = 1;
         doc::Grid newGrid(newGridSize);
+        // Tile images must use the grid's rounded integer dimensions even
+        // when the overall sprite scale produces a fractional tile size.
+        const gfx::SizeF tileScale(double(newGridSize.w) / tileset->grid().tileSize().w,
+                                   double(newGridSize.h) / tileset->grid().tileSize().h);
 
-        auto newTileset = new doc::Tileset(sprite(), newGrid, tileset->size());
-        doc::tile_index idx = 0;
-        newTileset->setName(tileset->name());
-        newTileset->setUserData(tileset->userData());
-        for (auto& tile : *tileset) {
-          if (idx != 0) {
-            doc::ImageRef newTileImg(resize_image(tile.image.get(),
-                                                  scale,
-                                                  m_resize_method,
-                                                  sprite()->palette(0),
-                                                  sprite()->rgbMap(0))); // TODO first frame?
-
-            newTileset->set(idx, newTileImg);
-            newTileset->setTileData(idx, tileset->getTileData(idx));
-          }
-
-          jobProgress((float)progress / img_count);
-          ++progress;
-          ++idx;
+        // Smooth indexed resizing depends on a palette. A shared tileset can
+        // need different output indices in each bank; nearest-neighbor does not.
+        std::map<int, std::vector<LayerTilemap*>> groups;
+        for (auto* layer : sprite()->allTilemaps()) {
+          if (layer->tileset() != tileset) continue;
+          const int key = m_resize_method == doc::algorithm::RESIZE_METHOD_NEAREST_NEIGHBOR ?
+            -1 : layer->paletteBank();
+          groups[key].push_back(static_cast<LayerTilemap*>(layer));
         }
-        tx(new cmd::ReplaceTileset(sprite(), tsi, newTileset));
+        if (groups.empty()) groups[-1] = {};
+        std::vector<std::unique_ptr<Tileset>> resized;
+        for (const auto& group : groups) {
+          auto* layer = group.second.empty() ? nullptr : group.second.front();
+          const auto* palette = layer ? layer->palette(0) : sprite()->palette(0);
+          const auto* rgbmap = layer ? layer->rgbMap(0) : sprite()->rgbMap(0);
+          auto result = std::make_unique<Tileset>(sprite(), newGrid, tileset->size());
+          result->setName(tileset->name());
+          result->setUserData(tileset->userData());
+          result->setBaseIndex(tileset->baseIndex());
+          result->setMatchFlags(tileset->matchFlags());
+          doc::tile_index idx = 0;
+          for (const auto& tile : *tileset) {
+            if (idx != 0)
+              result->set(idx, ImageRef(resize_image(tile.image.get(), tileScale,
+                                                    m_resize_method, palette, rgbmap)));
+            result->setTileData(idx, tileset->getTileData(idx));
+            jobProgress((float)progress / img_count);
+            ++idx;
+          }
+          resized.push_back(std::move(result));
+        }
+        size_t groupIndex = 0;
+        for (const auto& group : groups) {
+          auto* result = resized[groupIndex].release();
+          if (groupIndex++ == 0)
+            tx(new cmd::ReplaceTileset(sprite(), tsi, result));
+          else {
+            auto* add = new cmd::AddTileset(sprite(), result);
+            tx(add);
+            for (auto* layer : group.second)
+              tx(new cmd::SetLayerTileset(layer, add->tilesetIndex()));
+          }
+        }
+        progress += tileset->size();
 
         // Cancel all the operation?
         if (isCanceled())

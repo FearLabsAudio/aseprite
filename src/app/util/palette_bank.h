@@ -2,6 +2,7 @@
 #ifndef APP_UTIL_PALETTE_BANK_H_INCLUDED
 #define APP_UTIL_PALETTE_BANK_H_INCLUDED
 #pragma once
+#include "app/cmd/add_palette.h"
 #include "app/cmd/set_palette.h"
 #include "app/cmd/set_cel_image.h"
 #include "app/cmd/set_user_data.h"
@@ -118,25 +119,39 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
           throw std::runtime_error("This layer contains indices above 15. Use local 0-15 indices before assigning a bank.");
     }
     const bool inherit = inherit_bank_colors(layer, bank, options);
-    for (const auto* original : layer->sprite()->getPalettes()) {
+    // Snapshot the source before any palette commands change the native
+    // timeline. All numbered banks inherit the same frame-specific colors,
+    // including Bank 00 keyframes stored separately from the Document Palette.
+    std::vector<doc::Palette> inherited;
+    for (const auto frame : doc::palette_bank_frames(layer->sprite(), inherit ? layer->paletteBank() : -1)) {
+      auto colors = palette_for_bank_conversion(layer, bank, frame, options);
+      colors.setFrame(frame);
+      inherited.push_back(colors);
+    }
+    if (inherit && bank == 0) {
+      doc::UserData::Properties palettes;
+      for (const auto& colors : inherited)
+        palettes[std::to_string(colors.frame()+1)] = doc::bank_palette_colors(colors);
+      auto data = layer->sprite()->userData();
+      data.properties(doc::kPaletteBankProperties)["bank0Palettes"] = palettes;
+      tx(new cmd::SetUserData(layer->sprite(), data, static_cast<Doc*>(layer->sprite()->document())));
+    }
+    for (const auto& previous : inherited) {
+      const auto frame = previous.frame();
+      const auto* original = layer->sprite()->palette(frame);
       doc::Palette expanded(*original);
+      expanded.setFrame(frame);
       if (original->size() < (bank + 1) * 16)
         expanded.resize((bank + 1) * 16);
-      if (inherit) {
-        const auto previous = layer->paletteBank() >= 0 ?
-          doc::make_bank_palette(layer->sprite(), original->frame(), layer->paletteBank()) :
-          doc::make_bank_palette(*original, 0, doc::force_karn_rules(layer->sprite()));
-        if (bank == 0) {
-          if (!doc::bank_zero_palettes(layer->sprite()) ||
-              doc::make_bank_palette(layer->sprite(), original->frame(), 0) != previous)
-            tx(new cmd::SetPalette(layer->sprite(), original->frame(), &previous, true, true));
-        }
+      if (inherit && bank != 0)
+        for (int i = doc::force_karn_rules(layer->sprite()) ? 0 : 1; i < 16; ++i)
+          expanded.setEntry(bank * 16 + i, previous.getEntry(i));
+      if (expanded != *original) {
+        if (original->frame() == frame)
+          tx(new cmd::SetPalette(layer->sprite(), frame, &expanded));
         else
-          for (int i = doc::force_karn_rules(layer->sprite()) ? 0 : 1; i < 16; ++i)
-            expanded.setEntry(bank * 16 + i, previous.getEntry(i));
+          tx(new cmd::AddPalette(layer->sprite(), &expanded));
       }
-      if (expanded != *original)
-        tx(new cmd::SetPalette(layer->sprite(), original->frame(), &expanded));
     }
   }
   auto spriteData = layer->sprite()->userData();

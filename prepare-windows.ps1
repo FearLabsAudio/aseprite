@@ -101,7 +101,9 @@ function Install-KarnVisualStudio {
 
 function Get-KarnGit {
     param([string]$Dependencies, [string]$Downloads)
-    $installed = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+    # Multiple Git installations can be on PATH. Keep its first match as one
+    # executable path instead of passing an array that becomes a joined string.
+    $installed = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($installed) { return $installed.Source }
     $portable = Join-Path $Dependencies 'mingit/cmd/git.exe'
     $ready = Join-Path $Dependencies 'mingit/.karn-ready'

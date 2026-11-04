@@ -70,6 +70,10 @@ Use the **x** beside an unused bank's swatches to clear its colors and reset it 
 
 Import a palette with a banked layer selected to update only that bank. To copy colors between banks, select and copy the source swatches, select the destination layer and swatches, then paste. Under Force KARN rules, each palette shown in the color bar stays at 16 slots.
 
+Palette move/copy commands also use the selected bank. Copying replaces destination swatches within its 16 slots. Smooth resizing matches colors within each bank and separates shared tilesets when their banks need different results; nearest-neighbor resizing keeps them shared. New Sprite from Selection and Lua cel-image exports retain local indices and their bank colors. Copy Merged preserves composed bank colors and full-color reference pixels, including alpha.
+
+After rearranging or replacing colors, click **Remap Palette** to match the artwork to its previous colors. With a numbered bank selected, this remaps all frames of every layer using that bank, including hidden and locked layers. Document Palette remaps unbanked indexed layers. Full color Reference pixels stay unchanged, and transparent slot 0 stays fixed for numbered banks. Shared tilesets are separated when needed so other banks keep their pixels and tile IDs. Exact matches preserve appearance; colors missing from the new palette use the nearest match. Remapping is a separate undo step from the palette edit. Switching banks or frames clears the pending remap.
+
 The Eyedropper and **Alt-pick** sample the visible artwork across layers and select an exact match in the active layer's palette bank. A small red X means that color is unavailable; your selected color stays unchanged.
 
 ## VERA colors and KARN rules
@@ -138,7 +142,7 @@ Full color Reference layers include an indexed fallback for standard Aseprite. S
 
 PNG and sprite-sheet exports compose visible layers using their assigned banks. Hide full-color guides if they should not appear in the output. Export Tileset uses the selected layer's bank.
 
-Global color-mode changes and palette remapping are restricted while bank assignments exist. Export a composed image for conversion, or remove assignments first. Disable Force KARN rules before changing the document away from Indexed mode.
+Global color-mode changes are restricted while bank assignments exist. Export a composed image for conversion, or remove assignments first. Disable Force KARN rules before changing the document away from Indexed mode.
 
 ## Troubleshooting
 

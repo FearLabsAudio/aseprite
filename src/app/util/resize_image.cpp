@@ -38,6 +38,13 @@ doc::Image* resize_image(doc::Image* image,
   std::unique_ptr<doc::Image> newImage(doc::Image::create(spec));
   newImage->setMaskColor(image->maskColor());
 
+  doc::ImageRef source;
+  if (method != doc::algorithm::RESIZE_METHOD_NEAREST_NEIGHBOR) {
+    // Smooth resizing fixes transparent RGB values in its source. Keep that
+    // preparation off the live image so undo restores every original pixel.
+    source.reset(doc::Image::createCopy(image));
+    image = source.get();
+  }
   doc::algorithm::resize_image(image, newImage.get(), method, pal, rgbmap, newImage->maskColor());
 
   return newImage.release();
@@ -76,12 +83,17 @@ void resize_cel_image(Tx& tx,
         doc::Image::create(image->pixelFormat(), std::max(1, w), std::max(1, h)));
       newImage->setMaskColor(image->maskColor());
 
+      doc::ImageRef source;
+      if (method != doc::algorithm::RESIZE_METHOD_NEAREST_NEIGHBOR) {
+        source.reset(doc::Image::createCopy(image));
+        image = source.get();
+      }
       doc::algorithm::resize_image(
         image,
         newImage.get(),
         method,
-        sprite->palette(cel->frame()),
-        sprite->rgbMap(cel->frame()),
+        cel->layer()->palette(cel->frame()),
+        cel->layer()->rgbMap(cel->frame()),
         (cel->layer()->isBackground() ? -1 : sprite->transparentColor()));
 
       tx(new cmd::ReplaceImage(sprite, cel->imageRef(), newImage));

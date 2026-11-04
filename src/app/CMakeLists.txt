@@ -731,6 +731,7 @@ target_sources(app-lib PRIVATE
   util/new_image_from_mask.cpp
   util/open_file_job.cpp
   util/pal_ops.cpp
+  util/palette_remap.cpp
   util/pic_file.cpp
   util/pixel_ratio.cpp
   util/readable_time.cpp

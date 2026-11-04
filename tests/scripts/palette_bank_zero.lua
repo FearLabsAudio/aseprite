@@ -88,6 +88,43 @@ end
 checkFrames(animated)
 animated:saveAs(output..'-animated.aseprite')
 local reopened=app.open(output..'-animated.aseprite'); checkFrames(reopened)
-reopened:close(); animated:close()
+assert(#reopened.palettes==1,'Fixture must retain independent Bank 00 keyframes only')
+local documentBefore=Palette(reopened.palettes[1])
+local layer=reopened.layers[1]
+local function checkInherited(sprite,bank)
+  for frame=1,2 do
+    assert(sprite:getPaletteBank(bank,frame):getColor(3).red==frame*17,
+      'Bank inheritance must copy every source color keyframe')
+    assert(sprite:getPaletteBank(0,frame):getColor(3).red==frame*17,
+      'Copying colors must retain the source Bank 00 keyframes')
+    assert(sprite.palettes[1]:getColor(3)==documentBefore:getColor(3),
+      'Copying colors must leave Document Palette colors unchanged')
+  end
+end
+for bank=1,15 do
+  layer.paletteBank=bank
+  checkInherited(reopened,bank)
+  app.undo()
+  assert(layer.paletteBank==0 and #reopened.palettes==1)
+  checkFrames(reopened)
+  app.redo(); checkInherited(reopened,bank)
+  app.undo()
+end
+layer.paletteBank=2
+checkInherited(reopened,2)
+assert(#reopened.palettes==2,'Copied colors need a native palette keyframe at frame 2')
+app.undo()
+assert(layer.paletteBank==0 and #reopened.palettes==1)
+checkFrames(reopened)
+app.redo(); checkInherited(reopened,2)
+reopened:saveAs(output..'-inherited.aseprite')
+local inherited=app.open(output..'-inherited.aseprite'); checkInherited(inherited,2)
+-- Copy back into a NEW Bank 00, replacing stale independent color keyframes.
+inherited:clearPaletteBank(0)
+inherited.layers[1].paletteBank=0
+checkFrames(inherited)
+app.undo(); assert(inherited.layers[1].paletteBank==2)
+app.redo(); checkFrames(inherited)
+inherited:close(); reopened:close(); animated:close()
 os.remove(paletteFile)
 print('Bank 00: document isolation, import, undo, rendering, save/load and BMP/PNG exports OK')
