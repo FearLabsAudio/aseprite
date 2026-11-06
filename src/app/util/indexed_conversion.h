@@ -4,6 +4,7 @@
 #pragma once
 
 #include "doc/image_ref.h"
+#include "app/util/palette_match.h"
 #include "doc/octree_map.h"
 #include "doc/rgbmap_rgb5a3.h"
 #include "gfx/point.h"
@@ -20,6 +21,8 @@ struct IndexedConversionOptions {
   doc::RgbMapAlgorithm mapping = doc::RgbMapAlgorithm::DEFAULT;
   doc::FitCriteria fit = doc::FitCriteria::DEFAULT;
   bool copyBankColors = false;
+  bool remapBankColors = false;
+  PaletteMatch match = PaletteMatch::Existing;
 };
 
 inline doc::ImageRef convert_to_indexed(const doc::Image* source,
@@ -30,7 +33,9 @@ inline doc::ImageRef convert_to_indexed(const doc::Image* source,
 {
   // A private map avoids altering the document's mapping/palette during preview.
   std::unique_ptr<doc::RgbMap> map;
-  if (options.mapping == doc::RgbMapAlgorithm::RGB5A3)
+  if (options.match != PaletteMatch::Existing)
+    map.reset(new PaletteMatchMap(options.match));
+  else if (options.mapping == doc::RgbMapAlgorithm::RGB5A3)
     map.reset(new doc::RgbMapRGB5A3);
   else
     map.reset(new doc::OctreeMap);

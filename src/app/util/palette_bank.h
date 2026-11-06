@@ -4,18 +4,25 @@
 #pragma once
 #include "app/cmd/set_palette.h"
 #include "app/cmd/set_cel_image.h"
+#include "app/cmd/add_tileset.h"
+#include "app/cmd/set_layer_tileset.h"
+#include "app/cmd/unlink_cel.h"
 #include "app/cmd/set_user_data.h"
 #include "app/tx.h"
 #include "app/util/indexed_conversion.h"
 #include "doc/palette_bank.h"
 #include "doc/tileset.h"
+#include "doc/layer_tilemap.h"
+#include "doc/primitives.h"
 #include "doc/cel.h"
 #include "doc/cel_data.h"
 #include "doc/rgbmap.h"
 #include "doc/octree_map.h"
 #include "render/quantization.h"
 #include "render/dithering.h"
+#include "render/task_delegate.h"
 #include <set>
+#include <map>
 
 namespace app {
 inline void clear_palette_bank(Tx& tx, doc::Sprite* sprite, int bank)
@@ -68,8 +75,90 @@ inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc
   return doc::force_karn_rules(layer->sprite()) ? doc::make_bank_palette(*palette, 0, true) : *palette;
 }
 
+// Convert before mutating any source cel. Palette animation can require two
+// linked cels to produce different indices; only those links are separated.
+inline void remap_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
+                                     const IndexedConversionOptions& options,
+                                     render::TaskDelegate* task)
+{
+  struct Result { doc::Cel* cel; doc::ImageRef image; };
+  std::map<doc::ObjectId, std::vector<Result>> results;
+  const auto convert = [&](const doc::Image* image, doc::frame_t frame) {
+    doc::ImageRef rgb(render::convert_pixel_format(image, nullptr, doc::IMAGE_RGB,
+      render::Dithering(), nullptr, layer->palette(frame), false, 0));
+    const auto destination = palette_for_bank_conversion(layer, bank, frame, options);
+    return convert_to_indexed(rgb.get(), destination, 0, options, task);
+  };
+  std::unique_ptr<doc::Tileset> tileset;
+  std::map<std::vector<doc::color_t>, std::vector<doc::tile_index>> tileMaps;
+  // A new tileset isolates this layer from every other layer sharing the old
+  // tileset. Retain tile metadata, flags and unused tiles as well.
+  if (layer->isTilemap())
+    tileset.reset(doc::Tileset::MakeCopyWithoutImages(layer->tileset()));
+  const auto tileMap = [&](doc::frame_t frame) -> const std::vector<doc::tile_index>& {
+    const auto source = *layer->palette(frame);
+    const auto destination = palette_for_bank_conversion(layer, bank, frame, options);
+    std::vector<doc::color_t> key;
+    for (int i = 0; i < source.size(); ++i) key.push_back(source.getEntry(i));
+    for (int i = 0; i < destination.size(); ++i) key.push_back(destination.getEntry(i));
+    auto found = tileMaps.find(key);
+    if (found != tileMaps.end()) return found->second;
+    const bool first = tileMaps.empty();
+    std::vector<doc::tile_index> mapping(layer->tileset()->size(), 0);
+    for (doc::tile_index i = 0; i < layer->tileset()->size(); ++i) {
+      if (task && !task->continueTask()) break;
+      auto image = convert(layer->tileset()->get(i).get(), frame);
+      if (first) {
+        tileset->set(i, image);
+        mapping[i] = i;
+      }
+      else if (i)
+        mapping[i] = tileset->add(image, layer->tileset()->getTileData(i));
+    }
+    return tileMaps.emplace(std::move(key), std::move(mapping)).first->second;
+  };
+  if (tileset) tileMap(0);
+  for (auto* cel : layer->cels()) {
+    if (task && !task->continueTask()) return;
+    doc::ImageRef image;
+    if (tileset) {
+      const auto& mapping = tileMap(cel->frame());
+      if (task && !task->continueTask()) return;
+      image.reset(doc::Image::createCopy(cel->image()));
+      for (int y = 0; y < image->height(); ++y)
+        for (int x = 0; x < image->width(); ++x) {
+          const auto tile = image->getPixel(x, y);
+          const auto index = doc::tile_geti(tile);
+          if (index < mapping.size())
+            image->putPixel(x, y, doc::tile(mapping[index], doc::tile_getf(tile)));
+        }
+    }
+    else
+      image = convert(cel->image(), cel->frame());
+    results[cel->data()->id()].push_back({cel, image});
+  }
+  if (task && !task->continueTask()) return;
+  if (tileset) {
+    auto* add = new cmd::AddTileset(layer->sprite(), tileset.release());
+    tx(add);
+    tx(new cmd::SetLayerTileset(static_cast<doc::LayerTilemap*>(layer), add->tilesetIndex()));
+  }
+  for (const auto& group : results) {
+    const auto& first = group.second.front();
+    for (size_t i = 1; i < group.second.size(); ++i) {
+      const auto& result = group.second[i];
+      if (doc::count_diff_between_images(first.image.get(), result.image.get())) {
+        tx(new cmd::UnlinkCel(result.cel));
+        tx(new cmd::SetCelImage(result.cel, result.image));
+      }
+    }
+    tx(new cmd::SetCelImage(first.cel, first.image));
+  }
+}
+
 inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
-                                   const IndexedConversionOptions& options = {})
+                                   const IndexedConversionOptions& options = {},
+                                   render::TaskDelegate* task = nullptr)
 {
   if (!layer->isImage() || layer->isReference() || layer->isBackground() ||
       layer->sprite()->pixelFormat() != IMAGE_INDEXED)
@@ -82,6 +171,10 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
     throw std::runtime_error("Convert this tilemap to a regular layer before assigning Full color Reference.");
   const bool fromRgb = layer->isRgbReference();
   const int initialized = doc::initialized_palette_banks(layer->sprite());
+  if (bank >= 0 && !fromRgb && options.remapBankColors) {
+    remap_layer_palette_bank(tx, layer, bank, options, task);
+    if (task && !task->continueTask()) return;
+  }
   // Convert once per linked cel data, retaining animation links and undo history.
   if (bank == -2 || fromRgb) {
     std::set<doc::ObjectId> seen;

@@ -26,6 +26,7 @@
 #include "app/ui/dithering_selector.h"
 #include "app/ui/editor/editor.h"
 #include "app/ui/editor/editor_render.h"
+#include "app/ui_context.h"
 #include "app/ui/rgbmap_algorithm_selector.h"
 #include "app/ui/skin/skin_theme.h"
 #include "app/util/indexed_conversion.h"
@@ -47,8 +48,10 @@
 #include "ui/alert.h"
 #include "ui/size_hint_event.h"
 #include "ui/scale.h"
+#include "ui/message.h"
 
 #include "color_mode.xml.h"
+#include "palette_bank_conversion.xml.h"
 
 #include <string>
 #include <thread>
@@ -146,6 +149,170 @@ public:
       })
   {
   }
+};
+
+class PaletteBankWindow : public app::gen::PaletteBankConversion {
+public:
+  PaletteBankWindow(Editor* editor, doc::Layer* layer, int bank)
+    : m_editor(editor), m_layer(layer), m_bank(bank), m_delay(40), m_monitor(30)
+    , m_palette(doc::make_bank_palette(layer->sprite(), editor->frame(), bank))
+  {
+    const auto bankName = doc::palette_bank_name(layer->sprite(), bank);
+    destination()->setText(layer->name() + " -> Bank " + std::to_string(bank) +
+                            (bankName.empty() ? "" : " (" + bankName + ")"));
+    setMinSize(gfx::Size(360 * ui::guiscale(), 0));
+    gfx::Size descriptionSize;
+    for (const auto& text : {Strings::palette_bank_conversion_keep_description(),
+                             Strings::palette_bank_conversion_map_description(),
+                             Strings::palette_bank_conversion_copy_description()}) {
+      explanation()->setText(text);
+      descriptionSize = descriptionSize.createUnion(explanation()->sizeHint());
+    }
+    explanation()->setMinSize(descriptionSize);
+    if (!doc::palette_bank_used_by_other_layer(layer, bank))
+      operation()->addItem(Strings::palette_bank_conversion_copy_colors());
+    operation()->setSelectedItemIndex(0);
+    matching()->setSelectedItemIndex(0);
+    factor()->setValue(100);
+    preview()->setSelected(true);
+    m_dither = new DitheringSelector(DitheringSelector::SelectBoth, &m_palette);
+    // The canvas is the preview. Keep the closed selector's method name clear,
+    // including when disabled; pattern thumbnails remain in the dropdown.
+    m_dither->setUseCustomWidget(false);
+    m_dither->setExpansive(true);
+    m_dither->setSelectedItemIndex(0);
+    ditheringPlaceholder()->addChild(m_dither);
+    operation()->Change.connect([this] { changed(); });
+    matching()->Change.connect([this] { changed(); });
+    m_dither->Change.connect([this] { changed(); });
+    factor()->Change.connect([this] { changed(); });
+    preview()->Click.connect([this] { changed(); });
+    m_delay.Tick.connect([this] { startPreview(); });
+    m_monitor.Tick.connect([this] {
+      if (!m_task || m_task->isRunning()) return;
+      m_monitor.stop();
+      m_task->stop();
+      if (m_task->error()) {
+        m_error = m_task->error();
+        failPreview();
+        return;
+      }
+      Editor::renderEngine().setPreviewSprite(m_layer->sprite(), m_copy->sprite());
+      m_published = true;
+      invalidateEditors();
+    });
+    changed();
+  }
+  ~PaletteBankWindow() { stopPreview(); }
+
+  IndexedConversionOptions options() const
+  {
+    IndexedConversionOptions result;
+    result.remapBankColors = operation()->getSelectedItemIndex() == 1;
+    result.copyBankColors = operation()->getSelectedItemIndex() == 2;
+    result.match = static_cast<PaletteMatch>(matching()->getSelectedItemIndex() + 1);
+    result.dithering = render::Dithering(m_dither->ditheringAlgorithm(),
+      m_dither->ditheringMatrix(), factor()->getValue() / 100.0);
+    return result;
+  }
+  void finishPreview()
+  {
+    stopPreview();
+    if (m_error) std::rethrow_exception(m_error);
+  }
+
+protected:
+  bool onProcessMessage(ui::Message* message) override
+  {
+    if (message->type() == ui::kCloseMessage) stopPreview();
+    return app::gen::PaletteBankConversion::onProcessMessage(message);
+  }
+
+private:
+  void invalidateEditors()
+  {
+    for (auto* editor : UIContext::instance()->getAllEditorsIncludingPreview(m_editor->document()))
+      editor->invalidate();
+  }
+  void stopPreview()
+  {
+    m_delay.stop();
+    m_monitor.stop();
+    if (m_task) {
+      m_task->stop();
+      if (m_task->error()) m_error = m_task->error();
+      m_task.reset();
+    }
+    if (m_published) {
+      Editor::renderEngine().setPreviewSprite(nullptr, nullptr);
+      m_published = false;
+      invalidateEditors();
+    }
+    if (m_tx) {
+      m_copy->updateWriterThread();
+      m_tx.reset(); // Roll back only the private preview document.
+    }
+  }
+  void failPreview()
+  {
+    stopPreview();
+    ok()->setEnabled(false);
+    closeWindow(nullptr);
+  }
+  void changed()
+  {
+    stopPreview();
+    if (m_error) { failPreview(); return; }
+    const int mode = operation()->getSelectedItemIndex();
+    explanation()->setText(mode == 0 ? Strings::palette_bank_conversion_keep_description() :
+                           mode == 1 ? Strings::palette_bank_conversion_map_description() :
+                                       Strings::palette_bank_conversion_copy_description());
+    matching()->setEnabled(mode == 1);
+    m_dither->setEnabled(mode == 1);
+    // Floyd-Steinberg diffuses this percentage of quantization error. The
+    // ordered algorithms use their matrix and do not support this factor.
+    factor()->setEnabled(mode == 1 && m_dither->ditheringAlgorithm() ==
+                                      render::DitheringAlgorithm::ErrorDiffusion);
+    if (preview()->isSelected()) m_delay.start();
+  }
+  void startPreview()
+  {
+    m_delay.stop();
+    try {
+      if (!m_copy) {
+        m_copy = m_context.documents().add(m_editor->document()->duplicate(DuplicateExactCopy));
+        const auto layers = m_layer->sprite()->allLayers();
+        const auto index = std::find(layers.begin(), layers.end(), m_layer) - layers.begin();
+        m_copyLayer = m_copy->sprite()->allLayers()[index];
+        m_context.setActiveLayer(m_copyLayer);
+        m_context.setActiveFrame(m_editor->frame());
+      }
+      m_tx = std::make_unique<Tx>(m_copy, "Palette Bank Preview");
+      const auto settings = options();
+      m_task = std::make_unique<ConversionPreviewTask>([this, settings](render::TaskDelegate& task) {
+        m_copy->updateWriterThread();
+        set_layer_palette_bank(*m_tx, m_copyLayer, m_bank, settings, &task);
+      });
+      m_monitor.start();
+    }
+    catch (...) {
+      m_error = std::current_exception();
+      failPreview();
+    }
+  }
+  Editor* m_editor;
+  doc::Layer* m_layer;
+  int m_bank;
+  ui::Timer m_delay, m_monitor;
+  doc::Palette m_palette;
+  DitheringSelector* m_dither = nullptr;
+  Context m_context;
+  Doc* m_copy = nullptr;
+  doc::Layer* m_copyLayer = nullptr;
+  std::unique_ptr<Tx> m_tx;
+  std::unique_ptr<ConversionPreviewTask> m_task;
+  std::exception_ptr m_error;
+  bool m_published = false;
 };
 
 class ConversionItem : public ListItem {
@@ -582,6 +749,24 @@ bool choose_indexed_conversion(Editor* editor, doc::Layer* layer,
 bool choose_palette_bank_conversion(doc::Layer* layer, int bank,
                                     IndexedConversionOptions& options)
 {
+  if (bank >= 0 && bank != layer->paletteBank() && !layer->isRgbReference() &&
+      App::instance()->isGui() &&
+      ((doc::initialized_palette_banks(layer->sprite()) & (1 << bank)) ||
+       doc::palette_bank_used_by_other_layer(layer, bank))) {
+    auto* editor = Editor::activeEditor();
+    if (editor && editor->sprite() == layer->sprite()) {
+      PaletteBankWindow window(editor, layer, bank);
+      window.remapWindow();
+      window.centerWindow();
+      load_window_pos(&window, "PaletteBankConversion");
+      window.openWindowInForeground();
+      window.finishPreview();
+      save_window_pos(&window, "PaletteBankConversion");
+      if (window.closer() != window.ok()) return false;
+      options = window.options();
+      return true;
+    }
+  }
   if (bank >= 0 && bank != layer->paletteBank() && App::instance()->isGui() &&
       !doc::palette_bank_used_by_other_layer(layer, bank) &&
       (doc::initialized_palette_banks(layer->sprite()) & (1 << bank))) {

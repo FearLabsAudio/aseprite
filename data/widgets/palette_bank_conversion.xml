@@ -1,0 +1,37 @@
+<gui>
+  <window id="palette_bank_conversion" text="@.title">
+    <vbox>
+      <label id="destination" />
+      <combobox id="operation">
+        <listitem text="@.keep_indices" />
+        <listitem text="@.map_colors" />
+      </combobox>
+      <label id="explanation" />
+      <grid columns="2">
+        <label text="@.matching" for="matching" />
+        <combobox id="matching" cell_align="horizontal">
+          <listitem text="@.closest" />
+          <listitem text="@.lightness" />
+          <listitem text="@.hue" />
+        </combobox>
+        <label text="@.dithering" for="dithering_selector" />
+        <hbox id="dithering_placeholder" cell_align="horizontal" />
+        <label text="@.strength" for="factor" />
+        <hbox>
+          <slider min="0" max="100" value="100" id="factor" minwidth="140" expansive="true" />
+          <label text="%" />
+        </hbox>
+      </grid>
+      <label text="@.scope" />
+      <separator horizontal="true" />
+      <hbox>
+        <check text="@.preview" id="preview" selected="true" />
+        <boxfiller />
+        <hbox homogeneous="true">
+          <button text="@general.ok" closewindow="true" id="ok" magnet="true" minwidth="60" />
+          <button text="@general.cancel" closewindow="true" id="cancel" minwidth="60" />
+        </hbox>
+      </hbox>
+    </vbox>
+  </window>
+</gui>
