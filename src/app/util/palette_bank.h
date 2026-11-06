@@ -5,6 +5,7 @@
 #include "app/cmd/add_palette.h"
 #include "app/cmd/set_palette.h"
 #include "app/cmd/set_cel_image.h"
+#include "app/cmd/set_cel_data.h"
 #include "app/cmd/add_tileset.h"
 #include "app/cmd/set_layer_tileset.h"
 #include "app/cmd/unlink_cel.h"
@@ -84,6 +85,10 @@ inline void remap_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
 {
   struct Result { doc::Cel* cel; doc::ImageRef image; };
   std::map<doc::ObjectId, std::vector<Result>> results;
+  std::set<doc::ObjectId> otherLayerData;
+  for (const auto* other : layer->sprite()->allLayers())
+    if (other != layer)
+      for (const auto* cel : other->cels()) otherLayerData.insert(cel->dataId());
   const auto convert = [&](const doc::Image* image, doc::frame_t frame) {
     doc::ImageRef rgb(render::convert_pixel_format(image, nullptr, doc::IMAGE_RGB,
       render::Dithering(), nullptr, layer->palette(frame), false, 0));
@@ -146,6 +151,13 @@ inline void remap_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
   }
   for (const auto& group : results) {
     const auto& first = group.second.front();
+    // A bank assignment belongs to one layer, even when its cel data is also
+    // linked from another layer. Keep that layer's pixels and undo links intact.
+    if (otherLayerData.count(group.first)) {
+      tx(new cmd::UnlinkCel(first.cel));
+      for (size_t i = 1; i < group.second.size(); ++i)
+        tx(new cmd::SetCelData(group.second[i].cel, first.cel->dataRef()));
+    }
     for (size_t i = 1; i < group.second.size(); ++i) {
       const auto& result = group.second[i];
       if (doc::count_diff_between_images(first.image.get(), result.image.get())) {
