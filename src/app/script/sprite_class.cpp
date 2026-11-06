@@ -54,6 +54,7 @@
 #include "app/tx.h"
 #include "app/ui/doc_view.h"
 #include "app/util/palette_bank.h"
+#include "app/util/palette_remap.h"
 #include "base/convert_to.h"
 #include "base/fs.h"
 #include "base/gcd.h"
@@ -1102,6 +1103,29 @@ int Sprite_getPaletteBank(lua_State* L)
   return 1;
 }
 
+int Sprite_remapPalette(lua_State* L)
+{
+  auto* sprite = get_docobj<Sprite>(L, 1);
+  const auto* previous = get_palette_from_arg(L, 2);
+  if (!previous) return luaL_error(L, "A previous palette is required");
+  const int bank = luaL_optinteger(L, 3, -1);
+  if (bank < -1 || bank > 15) return luaL_error(L, "Palette bank must be -1 or 0-15");
+  const frame_t frame = lua_isnoneornil(L, 4) ? 0 : get_frame_number_from_arg(L, 4);
+  if (frame < 0 || frame >= sprite->totalFrames()) return luaL_error(L, "Frame is outside the sprite");
+  try {
+    const Palette current = bank >= 0 ? doc::make_bank_palette(sprite, frame, bank) :
+      doc::force_karn_rules(sprite) ? doc::make_bank_palette(*sprite->palette(frame), 0, true) :
+                                    *sprite->palette(frame);
+    Tx tx(sprite, "Remap Palette");
+    remap_palette_bank(tx, sprite, bank, *previous, current);
+    tx.commit();
+    return 0;
+  }
+  catch (const std::exception& e) {
+    return luaL_error(L, "%s", e.what());
+  }
+}
+
 int Sprite_clearPaletteBank(lua_State* L)
 {
   auto* sprite = get_docobj<Sprite>(L, 1);
@@ -1133,6 +1157,7 @@ const luaL_Reg Sprite_methods[] = {
   { "loadPalette",       Sprite_loadPalette       },
   { "setPalette",        Sprite_setPalette        },
   { "getPaletteBank",    Sprite_getPaletteBank    },
+  { "remapPalette",      Sprite_remapPalette      },
   { "clearPaletteBank",  Sprite_clearPaletteBank  },
   { "assignColorSpace",  Sprite_assignColorSpace  },
   { "convertColorSpace", Sprite_convertColorSpace },

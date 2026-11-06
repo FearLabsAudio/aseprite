@@ -559,9 +559,9 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
         ImageRef result;
         // resultBounds starts with the same bounds as source image,
         // but it'll be merged with the active cel bounds (if any).
-        gfx::Rect resultBounds = gfx::Rect(
-          position ? *position : (m_data->mask ? m_data->mask->origin() : gfx::Point()),
-          src_image->size());
+        const gfx::Point pasteOrigin = position ? *position :
+          (m_data->mask ? m_data->mask->origin() : gfx::Point());
+        gfx::Rect resultBounds(pasteOrigin, src_image->size());
         const bool isAnImageOnDstCel = ctx->activeSite().cel() && ctx->activeSite().cel()->image();
         ASSERT(!ctx->activeSite().cel() || ctx->activeSite().cel()->image());
         if (isAnImageOnDstCel) {
@@ -579,7 +579,7 @@ void Clipboard::paste(Context* ctx, const bool interactive, const gfx::Point* po
             BlendMode::NORMAL);
           doc::blend_image(result.get(),
                            src_image.get(),
-                           gfx::Clip(*position - resultBounds.origin(), src_image->bounds()),
+                           gfx::Clip(pasteOrigin - resultBounds.origin(), src_image->bounds()),
                            site.palette(),
                            255,
                            BlendMode::NORMAL);

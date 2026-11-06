@@ -11,6 +11,7 @@
 #include "doc/karn_rules.h"
 #include <charconv>
 #include <optional>
+#include <set>
 
 namespace doc {
 
@@ -158,6 +159,28 @@ inline Palette make_bank_palette(const Sprite* sprite, frame_t frame, int bank)
   return result;
 }
 
+// Bank 00 can have color changes without a corresponding native palette chunk.
+// Include both timelines when copying its colors into another numbered bank.
+inline std::set<frame_t> palette_bank_frames(const Sprite* sprite, int bank)
+{
+  std::set<frame_t> frames;
+  for (const auto* palette : sprite->getPalettes())
+    frames.insert(palette->frame());
+  if (bank == 0) {
+    if (const auto* palettes = bank_zero_palettes(sprite)) {
+      for (const auto& entry : *palettes) {
+        int at = 0;
+        const auto parsed = std::from_chars(entry.first.data(), entry.first.data()+entry.first.size(), at);
+        const auto* colors = std::get_if<UserData::Vector>(&entry.second);
+        if (parsed.ec == std::errc() && parsed.ptr == entry.first.data()+entry.first.size() &&
+            at > 0 && at <= sprite->totalFrames() && colors && colors->size() == 16)
+          frames.insert(at-1);
+      }
+    }
+  }
+  return frames;
+}
+
 inline UserData::Vector bank_palette_colors(const Palette& palette)
 {
   UserData::Vector colors;
@@ -200,11 +223,13 @@ inline void normalize_karn_palette_alpha(Sprite* sprite)
   }
 }
 
-inline bool needs_independent_bank_output(const Sprite* sprite)
+// A composed indexed image cannot represent independent Bank 00 colors and
+// the Document Palette together, or preserve full-color reference pixels.
+inline bool composed_output_requires_rgb(const Sprite* sprite)
 {
-  if (!bank_zero_palettes(sprite)) return false;
+  const bool independentZero = bank_zero_palettes(sprite) != nullptr;
   for (const auto* layer : sprite->allLayers())
-    if (layer->paletteBank() == 0) return true;
+    if (layer->isRgbReference() || (independentZero && layer->paletteBank() == 0)) return true;
   return false;
 }
 

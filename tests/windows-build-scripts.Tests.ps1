@@ -83,6 +83,19 @@ Test-Case 'Interrupted downloads are retried instead of reused' {
     Get-KarnDownload 'https://example.invalid/file' $target
     Assert-True ((Get-Content $target) -eq 'complete') 'The retry did not complete.'
 }
+Test-Case 'Multiple Git installations select only the first executable on PATH' {
+    function Get-Command {
+        param($Name, $CommandType, $ErrorAction)
+        return @(
+            @{ Source = 'C:\Program Files\Git\cmd\git.exe' },
+            @{ Source = 'C:\msys64\usr\bin\git.exe' }
+        )
+    }
+    function Invoke-RestMethod { throw 'Installed Git must not trigger a download.' }
+    $git = Get-KarnGit $fixtures $fixtures
+    Assert-True ($git -is [string]) 'Git selection returned more than one executable.'
+    Assert-True ($git -eq 'C:\Program Files\Git\cmd\git.exe') 'Git selection did not preserve the first PATH match.'
+}
 Test-Case 'Missing Git uses a verified portable package and survives a repeat run' {
     $root = New-Fixture 'portable git'
     $payload = New-Fixture 'git zip contents'
@@ -234,7 +247,10 @@ Test-Case 'Build keeps paths intact, selects x64, and stops after a configure fa
         param($VsInstallPath, [switch]$SkipAutomaticLocation, $DevCmdArguments)
         Assert-True ($DevCmdArguments -eq '-arch=x64 -host_arch=x64') 'Wrong compiler architecture.'
     }
-    function Get-Command { param($Name, $CommandType, $ErrorAction) return @{ Source = $fakeCompiler } }
+    function Get-Command {
+        param($Name, $CommandType, $ErrorAction)
+        return @(@{ Source = $fakeCompiler }, @{ Source = 'C:\other compiler\cl.exe' })
+    }
     $script:buildCalls = @()
     function Invoke-KarnCommand {
         param($Executable, $Arguments)

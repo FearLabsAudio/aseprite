@@ -66,7 +66,7 @@ public:
     , m_newBlend(fop->newBlend())
   {
     ASSERT(m_doc && m_sprite);
-    if (doc::needs_independent_bank_output(m_sprite)) m_spec.setColorMode(doc::ColorMode::RGB);
+    if (doc::composed_output_requires_rgb(m_sprite)) m_spec.setColorMode(doc::ColorMode::RGB);
   }
 
   void setSpecSize(const gfx::Size& fullCanvasSize, const gfx::Size& frameSize)
@@ -110,7 +110,13 @@ public:
 
   os::ColorSpaceRef osColorSpace() const override { return m_doc->osColorSpace(); }
 
-  bool needAlpha() const override { return m_sprite->needAlpha(); }
+  bool needAlpha() const override
+  {
+    // Composition can promote an indexed sprite to RGB. Tell encoders about
+    // the output format so full-color reference alpha is not discarded.
+    return (m_spec.colorMode() == doc::ColorMode::RGB ||
+            m_spec.colorMode() == doc::ColorMode::GRAYSCALE) && !isOpaque();
+  }
 
   bool isOpaque() const override { return m_sprite->isOpaque(); }
 
@@ -955,7 +961,7 @@ void FileOp::operate(IFileOpProgress* progress)
 
       // Create a temporary bitmap
       m_seq.image.reset(
-        Image::create(doc::needs_independent_bank_output(sprite) ? IMAGE_RGB : sprite->pixelFormat(),
+        Image::create(doc::composed_output_requires_rgb(sprite) ? IMAGE_RGB : sprite->pixelFormat(),
                       m_roi.fileCanvasSize().w, m_roi.fileCanvasSize().h));
 
       m_seq.progress_offset = 0.0f;

@@ -56,12 +56,12 @@ void NewSpriteFromSelectionCommand::onExecute(Context* context)
   if (!image)
     return;
 
-  Palette* palette = sprite->palette(site.frame());
+  Palette* palette = site.palette();
 
   std::unique_ptr<Sprite> dstSprite(Sprite::MakeStdSprite(ImageSpec((ColorMode)image->pixelFormat(),
                                                                     image->width(),
                                                                     image->height(),
-                                                                    sprite->transparentColor(),
+                                                                    image->maskColor(),
                                                                     sprite->colorSpace()),
                                                           palette->size()));
 
