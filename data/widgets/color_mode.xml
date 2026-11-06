@@ -20,6 +20,16 @@
       <listitem text="!HSL" />
     </combobox>
 
+    <vbox id="rgb_adjustments">
+      <label text="@.adjust_rgb" />
+      <grid columns="2">
+        <label text="@brightness_contrast.brightness_label" for="brightness" />
+        <slider min="-100" max="100" id="brightness" minwidth="140" cell_align="horizontal" />
+        <label text="@brightness_contrast.contrast_label" for="contrast" />
+        <slider min="-100" max="100" id="contrast" minwidth="140" cell_align="horizontal" />
+      </grid>
+    </vbox>
+
     <check text="@.flatten" id="flatten" />
 
     <check id="advanced_check" text="@general.advanced_options" />

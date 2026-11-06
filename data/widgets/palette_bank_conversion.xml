@@ -22,6 +22,15 @@
           <label text="%" />
         </hbox>
       </grid>
+      <vbox id="rgb_adjustments">
+        <label text="@.adjust_colors" />
+        <grid columns="2">
+          <label text="@brightness_contrast.brightness_label" for="brightness" />
+          <slider min="-100" max="100" id="brightness" minwidth="140" cell_align="horizontal" />
+          <label text="@brightness_contrast.contrast_label" for="contrast" />
+          <slider min="-100" max="100" id="contrast" minwidth="140" cell_align="horizontal" />
+        </grid>
+      </vbox>
       <label text="@.scope" />
       <separator horizontal="true" />
       <hbox>

@@ -5,6 +5,7 @@
 
 #include "doc/image_ref.h"
 #include "app/util/palette_match.h"
+#include "app/util/rgb_conversion_adjustment.h"
 #include "doc/octree_map.h"
 #include "doc/rgbmap_rgb5a3.h"
 #include "gfx/point.h"
@@ -23,6 +24,7 @@ struct IndexedConversionOptions {
   bool copyBankColors = false;
   bool remapBankColors = false;
   PaletteMatch match = PaletteMatch::Existing;
+  RgbConversionAdjustment adjustment;
 };
 
 inline doc::ImageRef convert_to_indexed(const doc::Image* source,
@@ -40,6 +42,8 @@ inline doc::ImageRef convert_to_indexed(const doc::Image* source,
   else
     map.reset(new doc::OctreeMap);
   map->regenerateMap(&palette, transparent, options.fit);
+  auto adjusted = options.adjustment.makeAdjustedCopy(source, delegate);
+  if (adjusted) source = adjusted.get();
   return doc::ImageRef(render::convert_pixel_format(source, nullptr, doc::IMAGE_INDEXED,
     options.dithering, map.get(), &palette, transparent < 0, transparent, nullptr, delegate));
 }

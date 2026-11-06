@@ -75,10 +75,12 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
                                const doc::RgbMapAlgorithm mapAlgorithm,
                                doc::rgba_to_graya_func toGray,
                                render::TaskDelegate* delegate,
-                               const FitCriteria fitCriteria)
+                               const FitCriteria fitCriteria,
+                               const RgbConversionAdjustment& adjustment)
   : WithSprite(sprite)
   , m_oldFormat(sprite->pixelFormat())
   , m_newFormat(newFormat)
+  , m_adjustment(adjustment)
 {
   if (sprite->pixelFormat() == newFormat)
     return;
@@ -270,7 +272,9 @@ void SetPixelFormat::convertImage(doc::Sprite* sprite,
   else {
     rgbmap = nullptr;
   }
-  ImageRef newImage(render::convert_pixel_format(oldImage.get(),
+  const ImageRef source = m_newFormat == IMAGE_INDEXED ?
+    m_adjustment.makeAdjustedCopy(oldImage.get(), delegate) : nullptr;
+  ImageRef newImage(render::convert_pixel_format(source ? source.get() : oldImage.get(),
                                                  nullptr,
                                                  m_newFormat,
                                                  dithering,

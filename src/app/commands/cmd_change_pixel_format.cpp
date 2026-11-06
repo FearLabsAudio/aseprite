@@ -107,7 +107,10 @@ public:
           combined->clear(0);
           renderer.renderCel(combined.get(), cel, sprite, cel->image(), source.layer->tileset(),
             sprite->palette(frame), cel->bounds(),
-            gfx::Clip(0, 0, bounds), 255, doc::BlendMode::SRC);
+            gfx::Clip(0, 0, bounds), 255,
+            // SRC copies the palette entry even for the transparent index.
+            // Preserve holes when rasterizing the existing indexed cel/tiles.
+            source.layer->isBackground() ? doc::BlendMode::SRC : doc::BlendMode::NORMAL);
           for (int y = 0; y < indexed->height(); ++y)
             for (int x = 0; x < indexed->width(); ++x)
               if (indexed->getPixel(x, y) != source.transparent)
@@ -174,6 +177,8 @@ public:
     operation()->setSelectedItemIndex(0);
     matching()->setSelectedItemIndex(0);
     factor()->setValue(100);
+    brightness()->setValue(0);
+    contrast()->setValue(0);
     preview()->setSelected(true);
     m_dither = new DitheringSelector(DitheringSelector::SelectBoth, &m_palette);
     // The canvas is the preview. Keep the closed selector's method name clear,
@@ -186,6 +191,8 @@ public:
     matching()->Change.connect([this] { changed(); });
     m_dither->Change.connect([this] { changed(); });
     factor()->Change.connect([this] { changed(); });
+    brightness()->Change.connect([this] { changed(); });
+    contrast()->Change.connect([this] { changed(); });
     preview()->Click.connect([this] { changed(); });
     m_delay.Tick.connect([this] { startPreview(); });
     m_monitor.Tick.connect([this] {
@@ -197,8 +204,19 @@ public:
         failPreview();
         return;
       }
-      Editor::renderEngine().setPreviewSprite(m_layer->sprite(), m_copy->sprite());
+      m_task.reset();
+      // The displayed document stays immutable until its replacement is ready.
+      // Reuse the previous display copy for the next conversion, after removing
+      // it from the renderer and rolling back its private transaction.
+      std::swap(m_copy, m_displayCopy);
+      std::swap(m_copyLayer, m_displayLayer);
+      std::swap(m_tx, m_displayTx);
+      Editor::renderEngine().setPreviewSprite(m_layer->sprite(), m_displayCopy->sprite());
       m_published = true;
+      if (m_tx) {
+        m_copy->updateWriterThread();
+        m_tx.reset();
+      }
       invalidateEditors();
     });
     changed();
@@ -213,6 +231,8 @@ public:
     result.match = static_cast<PaletteMatch>(matching()->getSelectedItemIndex() + 1);
     result.dithering = render::Dithering(m_dither->ditheringAlgorithm(),
       m_dither->ditheringMatrix(), factor()->getValue() / 100.0);
+    if (result.remapBankColors)
+      result.adjustment = {brightness()->getValue() / 100.0, contrast()->getValue() / 100.0};
     return result;
   }
   void finishPreview()
@@ -234,7 +254,7 @@ private:
     for (auto* editor : UIContext::instance()->getAllEditorsIncludingPreview(m_editor->document()))
       editor->invalidate();
   }
-  void stopPreview()
+  void stopPreview(bool clearPreview = true)
   {
     m_delay.stop();
     m_monitor.stop();
@@ -243,10 +263,14 @@ private:
       if (m_task->error()) m_error = m_task->error();
       m_task.reset();
     }
-    if (m_published) {
+    if (clearPreview && m_published) {
       Editor::renderEngine().setPreviewSprite(nullptr, nullptr);
       m_published = false;
       invalidateEditors();
+    }
+    if (clearPreview && m_displayTx) {
+      m_displayCopy->updateWriterThread();
+      m_displayTx.reset();
     }
     if (m_tx) {
       m_copy->updateWriterThread();
@@ -261,7 +285,7 @@ private:
   }
   void changed()
   {
-    stopPreview();
+    stopPreview(!preview()->isSelected());
     if (m_error) { failPreview(); return; }
     const int mode = operation()->getSelectedItemIndex();
     explanation()->setText(mode == 0 ? Strings::palette_bank_conversion_keep_description() :
@@ -269,6 +293,7 @@ private:
                                        Strings::palette_bank_conversion_copy_description());
     matching()->setEnabled(mode == 1);
     m_dither->setEnabled(mode == 1);
+    rgbAdjustments()->setEnabled(mode == 1);
     // Floyd-Steinberg diffuses this percentage of quantization error. The
     // ordered algorithms use their matrix and do not support this factor.
     factor()->setEnabled(mode == 1 && m_dither->ditheringAlgorithm() ==
@@ -310,6 +335,9 @@ private:
   Doc* m_copy = nullptr;
   doc::Layer* m_copyLayer = nullptr;
   std::unique_ptr<Tx> m_tx;
+  Doc* m_displayCopy = nullptr;
+  doc::Layer* m_displayLayer = nullptr;
+  std::unique_ptr<Tx> m_displayTx;
   std::unique_ptr<ConversionPreviewTask> m_task;
   std::exception_ptr m_error;
   bool m_published = false;
@@ -341,16 +369,18 @@ public:
     : m_timer(100)
     , m_editor(editor)
     , m_image(nullptr)
-    , m_imageBuffer(new doc::ImageBuffer)
     , m_selectedItem(nullptr)
     , m_ditheringSelector(nullptr)
     , m_mapAlgorithmSelector(nullptr)
     , m_bestFitCriteriaSelector(nullptr)
-    , m_imageJustCreated(true)
     , m_source(source)
   {
     const auto& pref = Preferences::instance();
     const doc::ColorMode from = source ? doc::ColorMode::RGB : m_editor->sprite()->colorMode();
+    brightness()->setValue(0);
+    contrast()->setValue(0);
+    if (from == doc::ColorMode::RGB)
+      setMinSize(gfx::Size(320 * ui::guiscale(), 0));
 
     // Add the color mode in the window title
     std::string fromMode;
@@ -364,7 +394,6 @@ public:
     setText(fmt::format("{}: {}", text(), fromMode));
     if (source) {
       setText(text() + (source->paste ? " - Paste" : " - " + source->layer->name()));
-      setMinSize(gfx::Size(320 * ui::guiscale(), 0));
       flatten()->setVisible(false);
     }
 
@@ -410,6 +439,8 @@ public:
       m_mapAlgorithmSelector->Change.connect([this] { onIndexParamChange(); });
       m_bestFitCriteriaSelector->Change.connect([this] { onIndexParamChange(); });
       factor()->Change.connect([this] { onIndexParamChange(); });
+      brightness()->Change.connect([this] { onIndexParamChange(); });
+      contrast()->Change.connect([this] { onIndexParamChange(); });
 
       advancedCheck()->Click.connect([this]() {
         advanced()->setVisible(advancedCheck()->isSelected());
@@ -430,6 +461,7 @@ public:
     colorModeView()->setMinSize(colorModeView()->sizeHint() + colorMode()->sizeHint());
 
     colorMode()->Change.connect([this] { onChangeColorMode(); });
+    flatten()->Click.connect([this] { onIndexParamChange(); });
     m_timer.Tick.connect([this] { onMonitorProgress(); });
 
     progress()->setReadOnly(true);
@@ -509,6 +541,21 @@ public:
 
   bool flattenEnabled() const { return flatten()->isSelected(); }
 
+  RgbConversionAdjustment rgbAdjustment() const
+  {
+    if (selectedColorMode() != doc::ColorMode::INDEXED ||
+        (!m_source && m_editor->sprite()->pixelFormat() != IMAGE_RGB))
+      return {};
+    return {brightness()->getValue() / 100.0, contrast()->getValue() / 100.0};
+  }
+
+  IndexedConversionOptions indexedOptions() const
+  {
+    IndexedConversionOptions options{ dithering(), rgbMapAlgorithm(), fitCriteria() };
+    options.adjustment = rgbAdjustment();
+    return options;
+  }
+
   void saveOptions()
   {
     auto& pref = Preferences::instance();
@@ -530,10 +577,13 @@ public:
   }
 
 private:
-  void stop()
+  void stop(bool clearPreview = true)
   {
-    m_editor->renderEngine().removePreviewImage();
-    m_editor->invalidate();
+    if (clearPreview) {
+      m_editor->renderEngine().removePreviewImage();
+      m_displayedImage.reset();
+      m_editor->invalidate();
+    }
 
     m_timer.stop();
     if (m_bgThread) {
@@ -541,6 +591,10 @@ private:
       if (m_bgThread->error())
         m_previewError = m_bgThread->error();
       m_bgThread.reset(nullptr);
+    }
+    if (m_conversionTx) {
+      m_conversionCopy->updateWriterThread();
+      m_conversionTx.reset();
     }
   }
 
@@ -559,7 +613,6 @@ private:
     m_previewError = error;
     stop();
     m_image.reset();
-    m_imageBuffer.reset();
     ok()->setEnabled(false);
     closeWindow(nullptr);
     // The caller reports the error after the modal window has unwound.
@@ -572,7 +625,8 @@ private:
       return;
     m_selectedItem = item;
 
-    stop();
+    // Keep the last completed buffer visible while its replacement is built.
+    stop(false);
     checkPreviewError();
 
     gfx::Rect visibleBounds = m_editor->getVisibleSpriteBounds();
@@ -580,6 +634,9 @@ private:
       return;
 
     doc::ColorMode dstColorMode = item->colorMode();
+    const bool rgbToIndexed = dstColorMode == doc::ColorMode::INDEXED &&
+      (m_source || m_editor->sprite()->pixelFormat() == IMAGE_RGB);
+    rgbAdjustments()->setVisible(rgbToIndexed);
 
     if (m_ditheringSelector) {
       const bool toIndexed = (dstColorMode == doc::ColorMode::INDEXED);
@@ -604,26 +661,60 @@ private:
       progress()->setVisible(false);
       expandWindow(sizeHint());
       layout();
-      IndexedConversionOptions options{ dithering(), rgbMapAlgorithm(), fitCriteria() };
+      const auto options = indexedOptions();
       m_bgThread.reset(new ConvertThread(m_image, m_editor->sprite(), m_editor->frame(),
                                         m_previewPosition, *m_source, options));
       m_timer.start();
       return;
     }
 
-    m_image.reset(
-      Image::create(ImageSpec(dstColorMode, visibleBounds.w, visibleBounds.h, 0), m_imageBuffer));
-    if (m_imageJustCreated) {
-      m_imageJustCreated = false;
-      m_image->clear(0);
+    if (rgbToIndexed) {
+      // Run the real conversion on a private document. Dithering must start at
+      // each cel's origin, and adjustment must happen before quantization and
+      // layer composition, just as it does when the user confirms the dialog.
+      if (!m_conversionContext) {
+        m_conversionContext = std::make_unique<Context>();
+        m_conversionCopy = m_conversionContext->documents().add(
+          m_editor->document()->duplicate(DuplicateExactCopy));
+      }
+      m_conversionTx = std::make_unique<Tx>(m_conversionCopy, "Color Mode Preview");
+      m_image.reset(Image::create(IMAGE_RGB, m_editor->sprite()->width(), m_editor->sprite()->height()));
+      m_previewPosition = gfx::Point();
+      const auto options = indexedOptions();
+      const auto frame = m_editor->frame();
+      const bool doFlatten = flattenEnabled();
+      const bool newBlend = Preferences::instance().experimental.newBlend();
+      m_bgThread = std::make_unique<ConversionPreviewTask>(
+        [this, options, frame, doFlatten, newBlend](render::TaskDelegate& task) {
+          m_conversionCopy->updateWriterThread();
+          auto* sprite = m_conversionCopy->sprite();
+          if (doFlatten) {
+            SelectedLayers layers;
+            for (auto* layer : sprite->root()->layers()) layers.insert(layer);
+            cmd::FlattenLayers::Options flattenOptions;
+            flattenOptions.newBlendMethod = newBlend;
+            (*m_conversionTx)(new cmd::FlattenLayers(sprite, layers, flattenOptions));
+          }
+          if (!task.continueTask()) return;
+          (*m_conversionTx)(new cmd::SetPixelFormat(sprite, IMAGE_INDEXED, options.dithering,
+            options.mapping, nullptr, &task, options.fit, options.adjustment));
+          if (!task.continueTask()) return;
+          render::Render renderer;
+          renderer.setNewBlend(newBlend);
+          renderer.setComposeGroups(true);
+          renderer.renderSprite(m_image.get(), sprite, frame);
+        });
+      progress()->setValue(0);
+      progress()->setVisible(false);
+      expandWindow(sizeHint());
+      layout();
+      m_timer.start();
+      return;
     }
 
-    m_editor->renderEngine().setPreviewImage(nullptr,
-                                             m_editor->frame(),
-                                             m_image.get(),
-                                             nullptr,
-                                             visibleBounds.origin(),
-                                             doc::BlendMode::SRC);
+    m_image.reset(Image::create(ImageSpec(dstColorMode, visibleBounds.w, visibleBounds.h, 0)));
+    m_image->clear(0);
+    m_previewPosition = visibleBounds.origin();
 
     m_editor->sprite()->rgbMap(0,
                                m_editor->sprite()->rgbMapForSprite(),
@@ -649,14 +740,12 @@ private:
 
   void onIndexParamChange()
   {
-    stop();
     m_selectedItem = nullptr;
     onChangeColorMode();
   }
 
   void onToGrayChange()
   {
-    stop();
     m_selectedItem = nullptr;
     onChangeColorMode();
   }
@@ -677,9 +766,9 @@ private:
         return;
       }
 
-      if (m_source)
-        m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_image.get(),
-          nullptr, m_previewPosition, doc::BlendMode::SRC);
+      m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_image.get(),
+        nullptr, m_previewPosition, doc::BlendMode::SRC);
+      m_displayedImage = m_image;
 
       progress()->setVisible(false);
       layout();
@@ -701,14 +790,16 @@ private:
   Timer m_timer;
   Editor* m_editor;
   doc::ImageRef m_image;
-  doc::ImageBufferPtr m_imageBuffer;
-  std::unique_ptr<ConvertThread> m_bgThread;
+  doc::ImageRef m_displayedImage;
+  std::unique_ptr<ConversionPreviewTask> m_bgThread;
+  std::unique_ptr<Context> m_conversionContext;
+  Doc* m_conversionCopy = nullptr;
+  std::unique_ptr<Tx> m_conversionTx;
   std::exception_ptr m_previewError;
   ConversionItem* m_selectedItem;
   DitheringSelector* m_ditheringSelector;
   RgbMapAlgorithmSelector* m_mapAlgorithmSelector;
   BestFitCriteriaSelector* m_bestFitCriteriaSelector;
-  bool m_imageJustCreated;
   const ConversionSource* m_source;
   gfx::Point m_previewPosition;
 };
@@ -741,7 +832,7 @@ bool choose_indexed_conversion(Editor* editor, doc::Layer* layer,
   save_window_pos(&window, "ChangePixelFormat");
   if (window.closer() != window.ok())
     return false;
-  options = { window.dithering(), window.rgbMapAlgorithm(), window.fitCriteria() };
+  options = window.indexedOptions();
   window.saveOptions();
   return true;
 }
@@ -819,6 +910,8 @@ struct ChangePixelFormatParams : public NewParams {
   Param<doc::RgbMapAlgorithm> rgbmap{ this, RgbMapAlgorithm::DEFAULT, "rgbmap" };
   Param<gen::ToGrayAlgorithm> toGray{ this, gen::ToGrayAlgorithm::DEFAULT, "toGray" };
   Param<doc::FitCriteria> fitCriteria{ this, doc::FitCriteria::DEFAULT, "fitCriteria" };
+  Param<int> brightness{ this, 0, "brightness" };
+  Param<int> contrast{ this, 0, "contrast" };
 };
 
 class ChangePixelFormatCommand : public CommandWithNewParams<ChangePixelFormatParams> {
@@ -906,6 +999,8 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
     params().rgbmap(window.rgbMapAlgorithm());
     params().fitCriteria(window.fitCriteria());
     params().toGray(window.toGray());
+    params().brightness(window.brightness()->getValue());
+    params().contrast(window.contrast()->getValue());
     flatten = window.flattenEnabled();
 
     window.saveOptions();
@@ -952,7 +1047,9 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
                                  params().rgbmap(),
                                  get_gray_func(params().toGray()),
                                  &job, // SpriteJob is a render::TaskDelegate
-                                 params().fitCriteria()));
+                                 params().fitCriteria(),
+                                 RgbConversionAdjustment{params().brightness() / 100.0,
+                                                         params().contrast() / 100.0}));
     });
     job.waitJob();
   }

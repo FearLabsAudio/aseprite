@@ -11,6 +11,7 @@
 
 #include "app/cmd/with_sprite.h"
 #include "app/cmd_sequence.h"
+#include "app/util/rgb_conversion_adjustment.h"
 #include "doc/color.h"
 #include "doc/fit_criteria.h"
 #include "doc/frame.h"
@@ -38,7 +39,8 @@ public:
                  const doc::RgbMapAlgorithm mapAlgorithm,
                  doc::rgba_to_graya_func toGray,
                  render::TaskDelegate* delegate,
-                 const doc::FitCriteria fitCriteria);
+                 const doc::FitCriteria fitCriteria,
+                 const RgbConversionAdjustment& adjustment = {});
 
 protected:
   void onExecute() override;
@@ -60,6 +62,7 @@ private:
 
   doc::PixelFormat m_oldFormat;
   doc::PixelFormat m_newFormat;
+  RgbConversionAdjustment m_adjustment;
   CmdSequence m_pre;
   CmdSequence m_post;
 };
