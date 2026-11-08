@@ -65,7 +65,7 @@ public:
     return best;
   }
 
-private:
+public:
   struct Lab { double l, a, b, chroma; };
   static Lab lab(doc::color_t color)
   {
@@ -85,6 +85,7 @@ private:
     result.chroma = std::hypot(result.a, result.b);
     return result;
   }
+private:
   PaletteMatch m_priority;
   std::vector<Lab> m_colors;
 };

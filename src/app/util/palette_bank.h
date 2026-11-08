@@ -62,6 +62,8 @@ inline void clear_palette_bank(Tx& tx, doc::Sprite* sprite, int bank)
 inline bool inherit_bank_colors(doc::Layer* layer, int bank,
                                 const IndexedConversionOptions& options = {})
 {
+  if (options.optimal.enabled)
+    return false;
   return bank >= 0 && !doc::palette_bank_used_by_other_layer(layer, bank) &&
          (options.copyBankColors || !(doc::initialized_palette_banks(layer->sprite()) & (1 << bank)));
 }
@@ -70,6 +72,8 @@ inline doc::Palette palette_for_bank_conversion(doc::Layer* layer, int bank, doc
                                                 const IndexedConversionOptions& options = {})
 {
   const auto* palette = layer->sprite()->palette(frame);
+  if (options.optimal.enabled && options.generated)
+    return options.generated->palette;
   if (inherit_bank_colors(layer, bank, options))
     return layer->paletteBank() >= 0 ? doc::make_bank_palette(layer->sprite(), frame, layer->paletteBank()) :
                                        doc::make_bank_palette(*palette, 0, doc::force_karn_rules(layer->sprite()));
@@ -93,7 +97,8 @@ inline void remap_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
     doc::ImageRef rgb(render::convert_pixel_format(image, nullptr, doc::IMAGE_RGB,
       render::Dithering(), nullptr, layer->palette(frame), false, 0));
     const auto destination = palette_for_bank_conversion(layer, bank, frame, options);
-    return convert_to_indexed(rgb.get(), destination, 0, options, task);
+    return convert_to_indexed(rgb.get(), destination, 0, options, task,
+                              doc::force_karn_rules(layer->sprite()));
   };
   std::unique_ptr<doc::Tileset> tileset;
   std::map<std::vector<doc::color_t>, std::vector<doc::tile_index>> tileMaps;
@@ -169,8 +174,10 @@ inline void remap_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
   }
 }
 
-inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
-                                   const IndexedConversionOptions& options = {},
+inline void set_layer_palette_bank(Tx& tx,
+                                   doc::Layer* layer,
+                                   int bank,
+                                   IndexedConversionOptions options = {},
                                    render::TaskDelegate* task = nullptr)
 {
   if (!layer->isImage() || layer->isReference() || layer->isBackground() ||
@@ -184,6 +191,23 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
     throw std::runtime_error("Convert this tilemap to a regular layer before assigning Full color Reference.");
   const bool fromRgb = layer->isRgbReference();
   const int initialized = doc::initialized_palette_banks(layer->sprite());
+  if (options.optimal.enabled) {
+    if (!fromRgb || bank < 0)
+      throw std::runtime_error(
+        "Optimal KARN palettes require an RGB layer and a numbered destination bank.");
+    if (!options.generated) {
+      std::vector<doc::ImageRef> images;
+      for (auto* cel : layer->cels())
+        images.push_back(cel->imageRef());
+      options.generated = std::make_shared<OptimalPaletteResult>(
+        optimal_palette(images,
+                        doc::make_bank_palette(layer->sprite(), 0, bank),
+                        options.optimal,
+                        options.adjustment,
+                        options.dithering,
+                        task));
+    }
+  }
   if (bank >= 0 && !fromRgb && options.remapBankColors) {
     remap_layer_palette_bank(tx, layer, bank, options, task);
     if (task && !task->continueTask()) return;
@@ -203,7 +227,8 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
       else {
         const auto palette = palette_for_bank_conversion(layer, bank, cel->frame(), options);
         const int mask = bank >= 0 ? 0 : layer->sprite()->transparentColor();
-        image = convert_to_indexed(cel->image(), palette, mask, options);
+        image = convert_to_indexed(cel->image(), palette, mask, options, task,
+                                   doc::force_karn_rules(layer->sprite()));
       }
       tx(new cmd::SetCelImage(cel, image));
     }
@@ -257,6 +282,17 @@ inline void set_layer_palette_bank(Tx& tx, doc::Layer* layer, int bank,
         else
           tx(new cmd::AddPalette(layer->sprite(), &expanded));
       }
+    }
+  }
+  if (options.optimal.enabled) {
+    for (auto frame : doc::palette_bank_frames(layer->sprite(), bank)) {
+      auto palette = bank == 0 ? doc::make_bank_palette(layer->sprite(), frame, 0) :
+                                 *layer->sprite()->palette(frame);
+      if (bank && palette.size() < (bank + 1) * 16)
+        palette.resize((bank + 1) * 16);
+      for (int i = 3; i < 16; ++i)
+        palette.setEntry(bank * 16 + i, options.generated->palette.getEntry(i));
+      tx(new cmd::SetPalette(layer->sprite(), frame, &palette, false, bank == 0));
     }
   }
   auto spriteData = layer->sprite()->userData();

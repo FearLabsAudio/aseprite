@@ -30,6 +30,33 @@
       </grid>
     </vbox>
 
+    <check text="@.optimal" id="optimal" />
+    <vbox id="optimal_options">
+      <grid columns="2">
+        <label text="@.artwork_colors" for="artwork_colors" />
+        <slider min="1" max="13" id="artwork_colors" cell_align="horizontal" />
+        <label text="@.transparency" for="transparency" />
+        <combobox id="transparency" cell_align="horizontal">
+          <listitem text="@.alpha_cutoff" />
+          <listitem text="@.dither_transparency" />
+        </combobox>
+        <label id="alpha_cutoff_label" text="@.alpha_cutoff" for="alpha_cutoff" />
+        <slider min="1" max="255" id="alpha_cutoff" cell_align="horizontal" />
+        <label id="transparency_dither_label" text="@.transparency_dither_amount" for="transparency_dither_amount" />
+        <hbox id="transparency_dither_controls" cell_align="horizontal">
+          <slider min="0" max="100" id="transparency_dither_amount" expansive="true" />
+          <label text="%" for="transparency_dither_amount" />
+        </hbox>
+      </grid>
+      <label text="@.optimal_scope" />
+    </vbox>
+    <vbox id="destination_palette">
+      <label id="destination_palette_label" text="!Destination palette:" />
+      <view id="destination_palette_view" minheight="16" maxheight="64">
+        <grid id="destination_swatches" columns="16" />
+      </view>
+      <label id="optimal_status" />
+    </vbox>
     <check text="@.flatten" id="flatten" />
 
     <check id="advanced_check" text="@general.advanced_options" />
@@ -42,6 +69,7 @@
     </grid>
 
     <separator horizontal="true" />
+    <check id="preview" text="@filters.preview" selected="true" />
     <hbox>
       <slider min="0" max="100" id="progress" minwidth="100" />
       <boxfiller />

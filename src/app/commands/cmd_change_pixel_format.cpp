@@ -12,6 +12,7 @@
 #include "app/app.h"
 #include "app/cmd/flatten_layers.h"
 #include "app/cmd/set_pixel_format.h"
+#include "app/color.h"
 #include "app/commands/command.h"
 #include "app/commands/new_params.h"
 #include "app/commands/params.h"
@@ -26,17 +27,18 @@
 #include "app/ui/dithering_selector.h"
 #include "app/ui/editor/editor.h"
 #include "app/ui/editor/editor_render.h"
-#include "app/ui_context.h"
 #include "app/ui/rgbmap_algorithm_selector.h"
 #include "app/ui/skin/skin_theme.h"
-#include "app/util/indexed_conversion.h"
+#include "app/ui_context.h"
 #include "app/util/conversion_preview_task.h"
+#include "app/util/indexed_conversion.h"
+#include "app/util/optimal_conversion.h"
 #include "app/util/palette_bank.h"
 #include "doc/cel.h"
-#include "doc/mask.h"
 #include "doc/color_mode.h"
 #include "doc/image.h"
 #include "doc/layer.h"
+#include "doc/mask.h"
 #include "doc/sprite.h"
 #include "fmt/format.h"
 #include "render/dithering.h"
@@ -44,11 +46,13 @@
 #include "render/quantization.h"
 #include "render/render.h"
 #include "render/task_delegate.h"
-#include "ui/listitem.h"
 #include "ui/alert.h"
-#include "ui/size_hint_event.h"
-#include "ui/scale.h"
+#include "ui/graphics.h"
+#include "ui/listitem.h"
 #include "ui/message.h"
+#include "ui/paint_event.h"
+#include "ui/scale.h"
+#include "ui/size_hint_event.h"
 
 #include "color_mode.xml.h"
 #include "palette_bank_conversion.xml.h"
@@ -63,6 +67,46 @@ using namespace ui;
 
 namespace {
 
+class OptimalSwatch : public ui::Widget {
+public:
+  OptimalSwatch() { setMinSize(gfx::Size(16 * ui::guiscale(), 12 * ui::guiscale())); }
+  void setColor(const app::Color& color, bool transparent = false, bool unused = false)
+  {
+    m_color = gfx::rgba(color.getRed(), color.getGreen(), color.getBlue());
+    m_transparent = transparent;
+    m_unused = unused;
+    invalidate();
+  }
+
+protected:
+  void onPaint(ui::PaintEvent& event) override
+  {
+    if (m_unused) {
+      const auto rc = clientBounds();
+      event.graphics()->fillRect(gfx::rgba(48, 48, 48), rc);
+      event.graphics()->drawLine(gfx::rgba(128, 128, 128),
+                                gfx::Point(rc.x, rc.y2() - 1),
+                                gfx::Point(rc.x2() - 1, rc.y));
+      return;
+    }
+    event.graphics()->fillRect(m_color, clientBounds());
+    if (m_transparent) {
+      const auto rc = clientBounds();
+      const int tile = 4 * ui::guiscale();
+      for (int y=rc.y;y<rc.y2();y+=tile)
+        for (int x=rc.x;x<rc.x2();x+=tile)
+          event.graphics()->fillRect(((x-rc.x)/tile+(y-rc.y)/tile)%2 ?
+            gfx::rgba(160,160,160) : gfx::rgba(80,80,80),
+            gfx::Rect(x,y,std::min(tile,rc.x2()-x),std::min(tile,rc.y2()-y)));
+    }
+  }
+
+private:
+  gfx::Color m_color = gfx::rgba(0, 0, 0);
+  bool m_transparent = false;
+  bool m_unused = false;
+};
+
 struct ConversionSource {
   doc::ImageRef image;
   doc::Palette palette;
@@ -70,6 +114,7 @@ struct ConversionSource {
   gfx::Point position;
   int transparent;
   bool paste;
+  int destinationBank;
 };
 
 rgba_to_graya_func get_gray_func(gen::ToGrayAlgorithm toGray)
@@ -82,55 +127,94 @@ rgba_to_graya_func get_gray_func(gen::ToGrayAlgorithm toGray)
   return nullptr;
 }
 
+// Composite either the converted pixels or the original RGB paste in the same
+// layer context, preserving the existing cel outside the pasted image.
+void renderConversionSource(const doc::ImageRef& dstImage,
+                            const doc::Sprite* sprite,
+                            doc::frame_t frame,
+                            const gfx::Point& pos,
+                            const ConversionSource& source,
+                            doc::ImageRef rgba,
+                            const doc::Image* indexed = nullptr)
+{
+  render::Render renderer;
+  renderer.setNewBlend(Preferences::instance().experimental.newBlend());
+  renderer.setComposeGroups(true);
+  gfx::Point origin = source.position;
+  auto* cel = source.layer->cel(frame);
+  // Paste replaces nontransparent indexed pixels, preserving the existing
+  // cel underneath. Compose before applying layer opacity/blending.
+  if (source.paste && cel) {
+    const gfx::Rect bounds = cel->bounds() | gfx::Rect(origin, rgba->size());
+    doc::ImageRef combined(Image::create(IMAGE_RGB, bounds.w, bounds.h));
+    combined->clear(0);
+    renderer.renderCel(combined.get(),
+                       cel,
+                       sprite,
+                       cel->image(),
+                       source.layer->tileset(),
+                       sprite->palette(frame),
+                       cel->bounds(),
+                       gfx::Clip(0, 0, bounds),
+                       255,
+                       // SRC copies the palette entry even for the transparent index.
+                       // Preserve holes when rasterizing the existing indexed cel/tiles.
+                       source.layer->isBackground() ? doc::BlendMode::SRC : doc::BlendMode::NORMAL);
+    if (indexed) {
+      for (int y = 0; y < indexed->height(); ++y)
+        for (int x = 0; x < indexed->width(); ++x)
+          if (indexed->getPixel(x, y) != source.transparent)
+            combined->putPixel(origin.x - bounds.x + x,
+                               origin.y - bounds.y + y,
+                               rgba->getPixel(x, y));
+    }
+    else
+      renderer.renderImage(combined.get(),
+                           rgba.get(),
+                           nullptr,
+                           origin.x - bounds.x,
+                           origin.y - bounds.y,
+                           255,
+                           doc::BlendMode::NORMAL);
+    rgba = combined;
+    origin = bounds.origin();
+  }
+  doc::Cel extra(frame, rgba);
+  extra.setPosition(origin);
+  if (cel)
+    renderer.setPreviewImage(source.layer, frame, rgba.get(), nullptr, origin, doc::BlendMode::SRC);
+  else {
+    extra.setOpacity(source.layer->opacity());
+    renderer.setExtraImage(render::ExtraType::OVER_COMPOSITE,
+                           &extra,
+                           rgba.get(),
+                           source.layer->blendMode(),
+                           source.layer,
+                           frame);
+  }
+  renderer.renderSprite(dstImage.get(),
+                        sprite,
+                        frame,
+                        gfx::Clip(0, 0, pos.x, pos.y, dstImage->width(), dstImage->height()));
+}
+
 class ConvertThread : public ConversionPreviewTask {
 public:
-  ConvertThread(const doc::ImageRef& dstImage, const doc::Sprite* sprite,
-                doc::frame_t frame, const gfx::Point& pos,
-                const ConversionSource& source, const IndexedConversionOptions& options)
-    : ConversionPreviewTask([dstImage, sprite, frame, pos, source, options](render::TaskDelegate& task) {
-      auto indexed = convert_to_indexed(source.image.get(), source.palette,
-                                        source.transparent, options, &task);
+  ConvertThread(const doc::ImageRef& dstImage,
+                const doc::Sprite* sprite,
+                doc::frame_t frame,
+                const gfx::Point& pos,
+                const ConversionSource& source,
+                const IndexedConversionOptions& options)
+    : ConversionPreviewTask([dstImage, sprite, frame, pos, source, options](
+                              render::TaskDelegate& task) {
+      auto indexed =
+        convert_to_indexed(source.image.get(), source.palette, source.transparent, options, &task,
+                           doc::force_karn_rules(sprite));
       if (task.continueTask()) {
         doc::ImageRef rgba(render::convert_pixel_format(indexed.get(), nullptr, IMAGE_RGB,
           render::Dithering(), nullptr, &source.palette, source.transparent < 0, 0));
-        render::Render renderer;
-        renderer.setNewBlend(Preferences::instance().experimental.newBlend());
-        renderer.setComposeGroups(true);
-        gfx::Point origin = source.position;
-        auto* cel = source.layer->cel(frame);
-        // Paste replaces nontransparent indexed pixels, preserving the existing
-        // cel underneath. Compose before applying layer opacity/blending.
-        if (source.paste && cel) {
-          const gfx::Rect bounds = cel->bounds() |
-            gfx::Rect(origin, rgba->size());
-          doc::ImageRef combined(Image::create(IMAGE_RGB, bounds.w, bounds.h));
-          combined->clear(0);
-          renderer.renderCel(combined.get(), cel, sprite, cel->image(), source.layer->tileset(),
-            sprite->palette(frame), cel->bounds(),
-            gfx::Clip(0, 0, bounds), 255,
-            // SRC copies the palette entry even for the transparent index.
-            // Preserve holes when rasterizing the existing indexed cel/tiles.
-            source.layer->isBackground() ? doc::BlendMode::SRC : doc::BlendMode::NORMAL);
-          for (int y = 0; y < indexed->height(); ++y)
-            for (int x = 0; x < indexed->width(); ++x)
-              if (indexed->getPixel(x, y) != source.transparent)
-                combined->putPixel(origin.x - bounds.x + x, origin.y - bounds.y + y,
-                                   rgba->getPixel(x, y));
-          rgba = combined;
-          origin = bounds.origin();
-        }
-        doc::Cel extra(frame, rgba);
-        extra.setPosition(origin);
-        if (cel)
-          renderer.setPreviewImage(source.layer, frame, rgba.get(), nullptr, origin,
-                                   doc::BlendMode::SRC);
-        else {
-          extra.setOpacity(source.layer->opacity());
-          renderer.setExtraImage(render::ExtraType::OVER_COMPOSITE, &extra, rgba.get(),
-                                 source.layer->blendMode(), source.layer, frame);
-        }
-        renderer.renderSprite(dstImage.get(), sprite, frame,
-          gfx::Clip(0, 0, pos.x, pos.y, dstImage->width(), dstImage->height()));
+        renderConversionSource(dstImage, sprite, frame, pos, source, rgba, indexed.get());
       }
     })
   {
@@ -381,6 +465,38 @@ public:
     contrast()->setValue(0);
     if (from == doc::ColorMode::RGB)
       setMinSize(gfx::Size(320 * ui::guiscale(), 0));
+    artworkColors()->setValue(13);
+    alphaCutoff()->setValue(128);
+    transparencyDitherAmount()->setValue(100);
+    preview()->setSelected(true);
+    preview()->Click.connect([this] { showPreview(); });
+    transparency()->setSelectedItemIndex(0);
+    m_requiresOverwrite = !source || source->palette.size() > 3;
+    if (source && source->destinationBank >= 0) {
+      const int bank = source->destinationBank;
+      m_requiresOverwrite = (doc::initialized_palette_banks(source->layer->sprite()) &
+                             (1 << bank)) ||
+                            doc::palette_bank_used_by_other_layer(source->layer, bank);
+      // Match the bank selector's NEW state, even if an uninitialized bank
+      // happens to overlap colors already present in the document palette.
+      optimal()->setSelected(!source->paste && !m_requiresOverwrite);
+    }
+    optimal()->Click.connect([this] {
+      if (optimal()->isSelected() && m_requiresOverwrite &&
+          ui::Alert::show(Strings::color_mode_overwrite()) != 1)
+        optimal()->setSelected(false);
+      onIndexParamChange();
+    });
+    artworkColors()->Change.connect([this] { onIndexParamChange(); });
+    transparency()->Change.connect([this] { onIndexParamChange(); });
+    alphaCutoff()->Change.connect([this] { onIndexParamChange(); });
+    transparencyDitherAmount()->Change.connect([this] { onIndexParamChange(); });
+    for (int i = 0; i < 256; ++i) {
+      auto* swatch = new OptimalSwatch;
+      swatch->setEnabled(false);
+      destinationSwatches()->addChildInCell(swatch, 1, 1, ui::HORIZONTAL | ui::VERTICAL);
+      m_swatches.push_back(swatch);
+    }
 
     // Add the color mode in the window title
     std::string fromMode;
@@ -553,6 +669,13 @@ public:
   {
     IndexedConversionOptions options{ dithering(), rgbMapAlgorithm(), fitCriteria() };
     options.adjustment = rgbAdjustment();
+    options.optimal.enabled = optimal()->isSelected() &&
+                              selectedColorMode() == doc::ColorMode::INDEXED &&
+                              (!m_source || (!m_source->paste && m_source->destinationBank >= 0));
+    options.optimal.colors = artworkColors()->getValue();
+    options.optimal.ditherTransparency = transparency()->getSelectedItemIndex() == 1;
+    options.optimal.alphaCutoff = alphaCutoff()->getValue();
+    options.optimal.transparencyDitherAmount = transparencyDitherAmount()->getValue();
     return options;
   }
 
@@ -577,6 +700,51 @@ public:
   }
 
 private:
+  void showPreview()
+  {
+    if (preview()->isSelected() && m_displayedImage) {
+      m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_displayedImage.get(),
+        nullptr, m_displayedPosition, doc::BlendMode::SRC);
+    }
+    else if (m_source && m_source->paste) {
+      if (!m_originalImage) {
+        m_originalPosition = m_editor->getVisibleSpriteBounds().origin();
+        const auto size = m_editor->getVisibleSpriteBounds().size();
+        m_originalImage.reset(Image::create(IMAGE_RGB, size.w, size.h));
+        m_originalImage->clear(0);
+        renderConversionSource(m_originalImage, m_editor->sprite(), m_editor->frame(),
+                               m_originalPosition, *m_source, m_source->image);
+      }
+      m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_originalImage.get(),
+        nullptr, m_originalPosition, doc::BlendMode::SRC);
+    }
+    else
+      m_editor->renderEngine().removePreviewImage();
+    m_editor->invalidate();
+  }
+
+  void showDestinationPalette(const doc::Palette& palette, bool generated)
+  {
+    const int rows = (std::min(256, palette.size()) + 15) / 16;
+    destinationPaletteView()->setMinSize(gfx::Size(336, std::min(64, rows * 16)) * ui::guiscale());
+    destinationPaletteLabel()->setText(generated ? "Destination palette (new):" : "Destination palette:");
+    const int transparent = generated ? 0 : m_source ? m_source->transparent :
+      (m_editor->sprite()->backgroundLayer() ? -1 : m_editor->sprite()->transparentColor());
+    for (int i=0;i<256;++i) {
+      m_swatches[i]->setVisible(i<palette.size());
+      if (i>=palette.size()) continue;
+      const auto c=palette.getEntry(i);
+      const bool unused = generated && m_optimalResult &&
+                          i >= 3 + m_optimalResult->colors && i < 16;
+      m_swatches[i]->setColor(app::Color::fromRgb(doc::rgba_getr(c),doc::rgba_getg(c),doc::rgba_getb(c)),
+                              i==transparent, unused);
+      if (unused)
+        m_swatches[i]->setTextf("%d: Unused", i);
+      else
+        m_swatches[i]->setTextf("%d: #%02x%02x%02x",i,doc::rgba_getr(c),doc::rgba_getg(c),doc::rgba_getb(c));
+    }
+  }
+
   void stop(bool clearPreview = true)
   {
     if (clearPreview) {
@@ -637,6 +805,30 @@ private:
     const bool rgbToIndexed = dstColorMode == doc::ColorMode::INDEXED &&
       (m_source || m_editor->sprite()->pixelFormat() == IMAGE_RGB);
     rgbAdjustments()->setVisible(rgbToIndexed);
+    const bool canOptimize = rgbToIndexed &&
+                             (!m_source || (!m_source->paste && m_source->destinationBank >= 0));
+    optimal()->setVisible(canOptimize);
+    const bool optimize = canOptimize && optimal()->isSelected();
+    optimalOptions()->setVisible(optimize);
+    const bool showAdvanced = !optimize && (m_mapAlgorithmSelector || m_bestFitCriteriaSelector);
+    advancedCheck()->setVisible(showAdvanced);
+    advanced()->setVisible(showAdvanced && advancedCheck()->isSelected());
+    const bool ditherTransparency = transparency()->getSelectedItemIndex() == 1;
+    alphaCutoffLabel()->setVisible(!ditherTransparency);
+    alphaCutoff()->setVisible(!ditherTransparency);
+    transparencyDitherLabel()->setVisible(ditherTransparency);
+    transparencyDitherControls()->setVisible(ditherTransparency);
+    destinationPalette()->setVisible(dstColorMode == doc::ColorMode::INDEXED);
+    optimalStatus()->setVisible(optimize);
+    // Keep the displayed palette paired with the completed image while recalculating.
+    if (!m_displayedImage) showDestinationPalette(m_source ? m_source->palette :
+      *m_editor->sprite()->palette(m_editor->frame()),false);
+    if (optimize)
+      optimalStatus()->setText("Calculating palette and verifying used colors...");
+    if (m_mapAlgorithmSelector)
+      m_mapAlgorithmSelector->setEnabled(!optimize);
+    if (m_bestFitCriteriaSelector)
+      m_bestFitCriteriaSelector->setEnabled(!optimize);
 
     if (m_ditheringSelector) {
       const bool toIndexed = (dstColorMode == doc::ColorMode::INDEXED);
@@ -652,7 +844,7 @@ private:
       toGrayCombobox()->setVisible(toGray);
     }
 
-    if (m_source) {
+    if (m_source && !optimize) {
       m_previewPosition = visibleBounds.origin();
       // Publish only completed buffers; the worker never writes a displayed image.
       m_image.reset(Image::create(IMAGE_RGB, visibleBounds.w, visibleBounds.h));
@@ -661,7 +853,7 @@ private:
       progress()->setVisible(false);
       expandWindow(sizeHint());
       layout();
-      const auto options = indexedOptions();
+      auto options = indexedOptions();
       m_bgThread.reset(new ConvertThread(m_image, m_editor->sprite(), m_editor->frame(),
                                         m_previewPosition, *m_source, options));
       m_timer.start();
@@ -680,25 +872,61 @@ private:
       m_conversionTx = std::make_unique<Tx>(m_conversionCopy, "Color Mode Preview");
       m_image.reset(Image::create(IMAGE_RGB, m_editor->sprite()->width(), m_editor->sprite()->height()));
       m_previewPosition = gfx::Point();
-      const auto options = indexedOptions();
+      auto options = indexedOptions();
       const auto frame = m_editor->frame();
-      const bool doFlatten = flattenEnabled();
+      const bool doFlatten = !m_source && flattenEnabled();
       const bool newBlend = Preferences::instance().experimental.newBlend();
       m_bgThread = std::make_unique<ConversionPreviewTask>(
-        [this, options, frame, doFlatten, newBlend](render::TaskDelegate& task) {
+        [this, options, frame, doFlatten, newBlend](render::TaskDelegate& task) mutable {
           m_conversionCopy->updateWriterThread();
           auto* sprite = m_conversionCopy->sprite();
           if (doFlatten) {
             SelectedLayers layers;
-            for (auto* layer : sprite->root()->layers()) layers.insert(layer);
+            for (auto* layer : sprite->root()->layers())
+              layers.insert(layer);
             cmd::FlattenLayers::Options flattenOptions;
             flattenOptions.newBlendMethod = newBlend;
             (*m_conversionTx)(new cmd::FlattenLayers(sprite, layers, flattenOptions));
           }
-          if (!task.continueTask()) return;
-          (*m_conversionTx)(new cmd::SetPixelFormat(sprite, IMAGE_INDEXED, options.dithering,
-            options.mapping, nullptr, &task, options.fit, options.adjustment));
-          if (!task.continueTask()) return;
+          if (!task.continueTask())
+            return;
+          if (options.optimal.enabled) {
+            if (m_source) {
+              const auto layers = m_editor->sprite()->allLayers();
+              const auto index = std::find(layers.begin(), layers.end(), m_source->layer) -
+                                 layers.begin();
+              auto* layer = sprite->allLayers()[index];
+              std::vector<doc::ImageRef> images;
+              for (auto* cel : layer->cels())
+                images.push_back(cel->imageRef());
+              options.generated = std::make_shared<OptimalPaletteResult>(
+                optimal_palette(images,
+                                doc::make_bank_palette(sprite, frame, m_source->destinationBank),
+                                options.optimal,
+                                options.adjustment,
+                                options.dithering,
+                                &task));
+              set_layer_palette_bank(*m_conversionTx,
+                                     layer,
+                                     m_source->destinationBank,
+                                     options,
+                                     &task);
+            }
+            else
+              optimal_convert_sprite(*m_conversionTx, sprite, options, &task);
+            m_optimalResult = options.generated;
+          }
+          else
+            (*m_conversionTx)(new cmd::SetPixelFormat(sprite,
+                                                      IMAGE_INDEXED,
+                                                      options.dithering,
+                                                      options.mapping,
+                                                      nullptr,
+                                                      &task,
+                                                      options.fit,
+                                                      options.adjustment));
+          if (!task.continueTask())
+            return;
           render::Render renderer;
           renderer.setNewBlend(newBlend);
           renderer.setComposeGroups(true);
@@ -766,9 +994,20 @@ private:
         return;
       }
 
-      m_editor->renderEngine().setPreviewImage(nullptr, m_editor->frame(), m_image.get(),
-        nullptr, m_previewPosition, doc::BlendMode::SRC);
       m_displayedImage = m_image;
+      m_displayedPosition = m_previewPosition;
+      showPreview();
+      if (indexedOptions().optimal.enabled && m_optimalResult) {
+        const auto& result = *m_optimalResult;
+        optimalStatus()->setText(std::to_string(result.colors) + " colors generated / " +
+                                 std::to_string(result.used) + " used / 0 reserved indices used");
+        auto palette=m_source ? result.palette : *m_editor->sprite()->palette(m_editor->frame());
+        if (palette.size()<16) palette.resize(16);
+        for(int i=3;i<16;++i) palette.setEntry(i,result.palette.getEntry(i));
+        showDestinationPalette(palette,true);
+      }
+      else showDestinationPalette(m_source ? m_source->palette :
+        *m_editor->sprite()->palette(m_editor->frame()),false);
 
       progress()->setVisible(false);
       layout();
@@ -791,6 +1030,9 @@ private:
   Editor* m_editor;
   doc::ImageRef m_image;
   doc::ImageRef m_displayedImage;
+  doc::ImageRef m_originalImage;
+  gfx::Point m_displayedPosition;
+  gfx::Point m_originalPosition;
   std::unique_ptr<ConversionPreviewTask> m_bgThread;
   std::unique_ptr<Context> m_conversionContext;
   Doc* m_conversionCopy = nullptr;
@@ -802,20 +1044,33 @@ private:
   BestFitCriteriaSelector* m_bestFitCriteriaSelector;
   const ConversionSource* m_source;
   gfx::Point m_previewPosition;
+  bool m_requiresOverwrite = false;
+  std::vector<OptimalSwatch*> m_swatches;
+  std::shared_ptr<OptimalPaletteResult> m_optimalResult;
 };
 
 } // anonymous namespace
 
-bool choose_indexed_conversion(Editor* editor, doc::Layer* layer,
-                               const doc::ImageRef& source, const gfx::Point& position,
-                               const doc::Palette& palette, int transparent,
-                               bool paste, IndexedConversionOptions& options,
-                               const doc::Mask* mask)
+bool choose_indexed_conversion(Editor* editor,
+                               doc::Layer* layer,
+                               const doc::ImageRef& source,
+                               const gfx::Point& position,
+                               const doc::Palette& palette,
+                               int transparent,
+                               bool paste,
+                               IndexedConversionOptions& options,
+                               const doc::Mask* mask,
+                               int destinationBank)
 {
   if (!editor || !layer || editor->sprite() != layer->sprite())
     return true;
-  ConversionSource input{ doc::ImageRef(Image::createCopy(source.get())), palette,
-                          layer, position, transparent, paste };
+  ConversionSource input{ doc::ImageRef(Image::createCopy(source.get())),
+                          palette,
+                          layer,
+                          position,
+                          transparent,
+                          paste,
+                          destinationBank };
   if (mask && !mask->isEmpty()) {
     for (int y = 0; y < input.image->height(); ++y)
       for (int x = 0; x < input.image->width(); ++x)
@@ -858,8 +1113,8 @@ bool choose_palette_bank_conversion(doc::Layer* layer, int bank,
       return true;
     }
   }
-  if (bank >= 0 && bank != layer->paletteBank() && App::instance()->isGui() &&
-      !doc::palette_bank_used_by_other_layer(layer, bank) &&
+  if (bank >= 0 && bank != layer->paletteBank() && !layer->isRgbReference() &&
+      App::instance()->isGui() && !doc::palette_bank_used_by_other_layer(layer, bank) &&
       (doc::initialized_palette_banks(layer->sprite()) & (1 << bank))) {
     const int answer = ui::Alert::show(
       "Unused Palette Bank<<No other layer uses this bank."
@@ -881,8 +1136,17 @@ bool choose_palette_bank_conversion(doc::Layer* layer, int bank,
     image->clear(0);
   const auto palette = palette_for_bank_conversion(layer, bank, editor->frame(), options);
   const bool copyBankColors = options.copyBankColors;
-  const bool accepted = choose_indexed_conversion(editor, layer, image, cel ? cel->position() : gfx::Point(),
-    palette, bank >= 0 ? 0 : layer->sprite()->transparentColor(), false, options);
+  const bool accepted = choose_indexed_conversion(
+    editor,
+    layer,
+    image,
+    cel ? cel->position() : gfx::Point(),
+    palette,
+    bank >= 0 ? 0 : layer->sprite()->transparentColor(),
+    false,
+    options,
+    nullptr,
+    bank);
   options.copyBankColors = copyBankColors;
   return accepted;
 }
@@ -912,6 +1176,11 @@ struct ChangePixelFormatParams : public NewParams {
   Param<doc::FitCriteria> fitCriteria{ this, doc::FitCriteria::DEFAULT, "fitCriteria" };
   Param<int> brightness{ this, 0, "brightness" };
   Param<int> contrast{ this, 0, "contrast" };
+  Param<bool> optimalPalette{ this, false, "optimalPalette" };
+  Param<int> artworkColors{ this, 13, "artworkColors" };
+  Param<bool> ditherTransparency{ this, false, "ditherTransparency" };
+  Param<int> alphaCutoff{ this, 128, "alphaCutoff" };
+  Param<int> transparencyDitherAmount{ this, 100, "transparencyDitherAmount" };
 };
 
 class ChangePixelFormatCommand : public CommandWithNewParams<ChangePixelFormatParams> {
@@ -975,6 +1244,7 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
   const bool ui = ((params().ui() || (!params().ui.isSet() && !params().colorMode.isSet())) &&
                    ctx->isUIAvailable());
   bool flatten = false;
+  IndexedConversionOptions conversionOptions;
   render::DitheringMatrix matrix = getDitheringMatrix(params().matrix());
 
   if (ui) {
@@ -1002,6 +1272,7 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
     params().brightness(window.brightness()->getValue());
     params().contrast(window.contrast()->getValue());
     flatten = window.flattenEnabled();
+    conversionOptions = window.indexedOptions();
 
     window.saveOptions();
   }
@@ -1013,6 +1284,16 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
   }
 
   // No conversion needed
+  if (!ui && params().optimalPalette() && params().colorMode() == ColorMode::INDEXED) {
+    conversionOptions.optimal = { true,
+                                  std::clamp(params().artworkColors(), 1, 13),
+                                  params().ditherTransparency(),
+                                  std::clamp(params().alphaCutoff(), 1, 255),
+                                  std::clamp(params().transparencyDitherAmount(), 0, 100) };
+    conversionOptions.adjustment = { params().brightness() / 100.0, params().contrast() / 100.0 };
+    conversionOptions.dithering =
+      render::Dithering(params().dithering(), matrix, params().factor());
+  }
   Doc* doc = ctx->activeDocument();
   if (doc->sprite()->pixelFormat() == (PixelFormat)params().colorMode())
     return;
@@ -1040,7 +1321,12 @@ void ChangePixelFormatCommand::onExecute(Context* ctx)
       tx(new cmd::FlattenLayers(sprite, selLayers, options));
     }
 
-    job.startJobWithCallback([this, &job, sprite, &matrix](Tx& tx) {
+    job.startJobWithCallback([this, &job, sprite, &matrix, conversionOptions, flatten](
+                               Tx& tx) mutable {
+      if (conversionOptions.optimal.enabled) {
+        optimal_convert_sprite(tx, sprite, conversionOptions, &job);
+        return;
+      }
       tx(new cmd::SetPixelFormat(sprite,
                                  (PixelFormat)params().colorMode(),
                                  render::Dithering(params().dithering(), matrix, params().factor()),

@@ -3014,7 +3014,8 @@ void Editor::pasteImage(const ImageRef& image,
     if (!choose_indexed_conversion(this, site.layer(), pastedImage, mask2.origin(), palette,
                                    transparent, true, options, &mask2))
       return;
-    pastedImage = convert_to_indexed(pastedImage.get(), palette, transparent, options);
+    pastedImage = convert_to_indexed(pastedImage.get(), palette, transparent, options, nullptr,
+                                     doc::force_karn_rules(sprite));
     if (site.tilemapMode() == TilemapMode::Tiles) {
       site.tilemapMode(TilemapMode::Pixels);
       site.tilesetMode(TilesetMode::Auto);

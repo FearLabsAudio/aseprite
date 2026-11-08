@@ -11,6 +11,7 @@
 
 #include "app/cmd/with_sprite.h"
 #include "app/cmd_sequence.h"
+#include "app/util/indexed_conversion.h"
 #include "app/util/rgb_conversion_adjustment.h"
 #include "doc/color.h"
 #include "doc/fit_criteria.h"
@@ -40,7 +41,8 @@ public:
                  doc::rgba_to_graya_func toGray,
                  render::TaskDelegate* delegate,
                  const doc::FitCriteria fitCriteria,
-                 const RgbConversionAdjustment& adjustment = {});
+                 const RgbConversionAdjustment& adjustment = {},
+                 const IndexedConversionOptions& options = {});
 
 protected:
   void onExecute() override;
@@ -63,6 +65,7 @@ private:
   doc::PixelFormat m_oldFormat;
   doc::PixelFormat m_newFormat;
   RgbConversionAdjustment m_adjustment;
+  IndexedConversionOptions m_options;
   CmdSequence m_pre;
   CmdSequence m_post;
 };

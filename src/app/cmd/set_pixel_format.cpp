@@ -76,11 +76,13 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
                                doc::rgba_to_graya_func toGray,
                                render::TaskDelegate* delegate,
                                const FitCriteria fitCriteria,
-                               const RgbConversionAdjustment& adjustment)
+                               const RgbConversionAdjustment& adjustment,
+                               const IndexedConversionOptions& options)
   : WithSprite(sprite)
   , m_oldFormat(sprite->pixelFormat())
   , m_newFormat(newFormat)
   , m_adjustment(adjustment)
+  , m_options(options)
 {
   if (sprite->pixelFormat() == newFormat)
     return;
@@ -154,7 +156,7 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
   int newMaskIndex = 0;
   if (newFormat == IMAGE_INDEXED) {
     // Restore the document constraint when returning from RGB/grayscale.
-    if (doc::force_rgb444(sprite)) {
+    if (doc::force_rgb444(sprite) && !m_options.optimal.enabled) {
       for (const auto* original : sprite->getPalettes()) {
         Palette palette(*original);
         doc::snap_rgb444(palette, doc::force_karn_rules(sprite));
@@ -171,7 +173,8 @@ SetPixelFormat::SetPixelFormat(Sprite* sprite,
 
     // When converting to indexed mode the mask color depends if the
     // palette includes a fully transparent entry.
-    newMaskIndex = sprite->palette(0)->findMaskColor();
+    newMaskIndex = (m_options.optimal.enabled || doc::force_karn_rules(sprite)) ?
+                    0 : sprite->palette(0)->findMaskColor();
     if (newMaskIndex < 0)
       newMaskIndex = 0;
 
@@ -257,6 +260,20 @@ void SetPixelFormat::convertImage(doc::Sprite* sprite,
 {
   ASSERT(oldImage);
   ASSERT(oldImage->pixelFormat() != IMAGE_TILEMAP);
+  if (m_newFormat == IMAGE_INDEXED &&
+      (m_options.optimal.enabled || doc::force_karn_rules(sprite))) {
+    auto options = m_options;
+    options.dithering = dithering;
+    options.mapping = mapAlgorithm;
+    options.fit = fitCriteria;
+    options.adjustment = m_adjustment;
+    auto image =
+      convert_to_indexed(oldImage.get(), *sprite->palette(frame),
+                         isBackground && !options.optimal.enabled ? -1 : 0, options, delegate,
+                         doc::force_karn_rules(sprite));
+    m_pre.add(new cmd::ReplaceImage(sprite, oldImage, image));
+    return;
+  }
 
   // Making the RGBMap for Image->INDEXDED conversion.
   // TODO: this is needed only when newImage

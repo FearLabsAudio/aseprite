@@ -219,6 +219,7 @@ void exit_module_gui()
   save_gui_config();
 
   delete defered_invalid_timer;
+  defered_invalid_timer = nullptr;
   delete manager;
 
   // Now we can destroy theme

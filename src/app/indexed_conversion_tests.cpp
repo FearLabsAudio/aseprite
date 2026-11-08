@@ -2,54 +2,55 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-#include <gtest/gtest.h>
-#include <ctime>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include "app/util/indexed_conversion.h"
-#include "app/util/palette_bank.h"
+#include "app/cli/app_options.h"
+#include "app/cmd/flatten_layers.h"
+#include "app/cmd/set_pixel_format.h"
 #include "app/color_picker.h"
 #include "app/commands/cmd_eyedropper.h"
-#include "app/cli/app_options.h"
-#include "app/doc_undo.h"
-#include "app/test_context.h"
 #include "app/commands/commands.h"
-#include "app/commands/params.h"
-#include "app/cmd/set_pixel_format.h"
-#include "app/cmd/flatten_layers.h"
 #include "app/commands/filters/cels_target.h"
+#include "app/commands/params.h"
+#include "app/doc_undo.h"
 #include "app/modules/palettes.h"
 #include "app/pref/preferences.h"
-#include "app/ui_context.h"
-#include "app/ui/color_bar.h"
-#include "app/ui/palette_view.h"
-#include "app/ui/skin/skin_theme.h"
-#include "app/ui/editor/editor.h"
-#include "app/ui/editor/editor_render.h"
-#include "app/ui/editor/standby_state.h"
+#include "app/test_context.h"
 #include "app/tools/active_tool.h"
 #include "app/tools/ink.h"
 #include "app/tools/tool_box.h"
-#include "ui/cursor.h"
-#include "ui/system.h"
-#include "ui/alert.h"
-#include "ui/combobox.h"
-#include "ui/slider.h"
-#include "ui/button.h"
+#include "app/ui/color_bar.h"
 #include "app/ui/dithering_selector.h"
+#include "app/ui/editor/editor.h"
+#include "app/ui/editor/editor_render.h"
+#include "app/ui/editor/standby_state.h"
+#include "app/ui/palette_view.h"
+#include "app/ui/skin/skin_theme.h"
+#include "app/ui_context.h"
+#include "app/util/indexed_conversion.h"
+#include "app/util/palette_bank.h"
+#include "doc/image.h"
+#include "doc/mask.h"
+#include "doc/palette_bank.h"
+#include "doc/primitives.h"
+#include "doc/tilesets.h"
+#include "os/surface.h"
+#include "os/system.h"
+#include "render/render.h"
+#include "render/task_delegate.h"
+#include "ui/alert.h"
+#include "ui/button.h"
+#include "ui/combobox.h"
+#include "ui/cursor.h"
+#include "ui/label.h"
 #include "ui/manager.h"
 #include "ui/message.h"
+#include "ui/slider.h"
+#include "ui/system.h"
 #include "ui/timer.h"
-#include "os/system.h"
-#include "os/surface.h"
-#include "doc/mask.h"
-#include "doc/image.h"
-#include "doc/palette_bank.h"
-#include "doc/tilesets.h"
-#include "doc/primitives.h"
-#include "render/task_delegate.h"
-#include "render/render.h"
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
 
 using namespace doc;
 using namespace app;
@@ -127,6 +128,164 @@ TEST(IndexedConversion, UnbankedTransparencyAndOpaqueIndexZero)
   EXPECT_EQ(0, opaque->getPixel(1, 0));
 }
 
+TEST(IndexedConversion, OrdinaryConversionExcludesReservedColorsOnlyWithKarnRules)
+{
+  Palette palette(0, 16);
+  palette.setEntry(0, rgba(0, 0, 0, 0));
+  palette.setEntry(1, rgba(255, 0, 255, 255));
+  palette.setEntry(2, rgba(0, 255, 0, 255));
+  for (int i = 3; i < 16; ++i)
+    palette.setEntry(i, rgba((i-3)*17, (i-3)*17, (i-3)*17, 255));
+  const Palette before(palette);
+  ImageRef source(Image::create(IMAGE_RGB, 33, 4));
+  for (int y = 0; y < 4; ++y)
+    for (int x = 0; x < 33; ++x)
+      source->putPixel(x, y, x == 32 ? 0 : palette.getEntry(x < 16 ? 1 : 2));
+  for (bool karn : { false, true })
+    for (auto mapping : { RgbMapAlgorithm::OCTREE, RgbMapAlgorithm::RGB5A3 })
+      for (auto algorithm : { render::DitheringAlgorithm::None,
+                              render::DitheringAlgorithm::Ordered,
+                              render::DitheringAlgorithm::ErrorDiffusion }) {
+        IndexedConversionOptions options;
+        options.mapping = mapping;
+        options.dithering = render::Dithering(algorithm, render::BayerMatrix::make(8), 0.71);
+        auto converted = convert_to_indexed(source.get(), palette, 0, options, nullptr, karn);
+        std::set<int> used;
+        for (int y = 0; y < 4; ++y)
+          for (int x = 0; x < 33; ++x) {
+            const auto index = converted->getPixel(x, y);
+            if (x == 32) EXPECT_EQ(0, index);
+            else if (karn) EXPECT_TRUE(index >= 3 && index <= 15);
+            else used.insert(index);
+          }
+        if (!karn) {
+          EXPECT_TRUE(used.count(1));
+          EXPECT_TRUE(used.count(2));
+        }
+        EXPECT_EQ(before, palette);
+      }
+}
+
+TEST(IndexedConversion, OptimalKarnPaletteUsesLegalDistinctColorsAndBinaryTransparency)
+{
+  Palette palette(0, 16);
+  palette.setEntry(1, rgba(255, 0, 255, 255));
+  palette.setEntry(2, rgba(255, 0, 255, 255));
+  ImageRef source(Image::create(IMAGE_RGB, 64, 32));
+  for (int y = 0; y < 32; ++y)
+    for (int x = 0; x < 64; ++x)
+      source->putPixel(x, y, rgba(x * 4, y * 8, (x + y) * 2, (x < 8 ? 0 : x < 16 ? 96 : 255)));
+  const ImageRef original(Image::createCopy(source.get()));
+  for (bool coverage : { false, true }) {
+    IndexedConversionOptions options;
+    options.optimal = { true, 13, coverage, 128 };
+    options.dithering = render::Dithering(render::DitheringAlgorithm::ErrorDiffusion,
+                                          render::DitheringMatrix(),
+                                          0.65);
+    options.generated = std::make_shared<OptimalPaletteResult>(
+      optimal_palette({ source }, palette, options.optimal, options.adjustment, options.dithering));
+    const auto& result = *options.generated;
+    EXPECT_EQ(13, result.colors);
+    EXPECT_EQ(result.colors, result.used);
+    EXPECT_EQ(palette.getEntry(1), result.palette.getEntry(1));
+    EXPECT_EQ(palette.getEntry(2), result.palette.getEntry(2));
+    std::set<color_t> unique;
+    for (int i = 3; i < 3 + result.colors; ++i) {
+      auto c = result.palette.getEntry(i);
+      EXPECT_EQ(c, snap_rgb444(c, true));
+      unique.insert(c);
+    }
+    EXPECT_EQ(result.colors, unique.size());
+    auto output = convert_to_indexed(source.get(), result.palette, 0, options);
+    std::set<int> used;
+    int partiallyCovered = 0;
+    for (int y = 0; y < 32; ++y)
+      for (int x = 0; x < 64; ++x) {
+        auto index = output->getPixel(x, y);
+        EXPECT_TRUE(index == 0 || (index >= 3 && index < 3 + result.colors));
+        if (index)
+          used.insert(index);
+        if (x < 8 || (!coverage && x < 16))
+          EXPECT_EQ(0, index);
+        if (x >= 8 && x < 16 && index)
+          ++partiallyCovered;
+      }
+    EXPECT_EQ(result.used, used.size());
+    EXPECT_EQ(coverage, partiallyCovered > 0);
+    EXPECT_EQ(0, count_diff_between_images(source.get(), original.get()));
+  }
+  source->clear(0);
+  EXPECT_EQ(0, optimal_palette({ source }, palette, { true, 13, false, 128 }, {}, {}).colors);
+  source->clear(rgba(17, 34, 51, 255));
+  EXPECT_EQ(1, optimal_palette({ source }, palette, { true, 13, false, 128 }, {}, {}).colors);
+}
+
+TEST(IndexedConversion, OptimalTransparencyDithersAlphaWithIndependentStrength)
+{
+  Palette palette(0, 16);
+  ImageRef source(Image::create(IMAGE_RGB, 2, 2));
+  source->clear(rgba(17, 34, 51, 96));
+  // With color dithering off, the second pixel receives 7/16 of the
+  // first pixel's alpha error. The next row receives error from above.
+  for (const auto& [amount, expectedMask] :
+       { std::pair{ 0, 0b0000 }, std::pair{ 50, 0b0100 }, std::pair{ 100, 0b0110 } }) {
+    IndexedConversionOptions options;
+    options.optimal = { true, 13, true, 200, amount };
+    options.generated = std::make_shared<OptimalPaletteResult>(
+      optimal_palette({ source }, palette, options.optimal, options.adjustment, options.dithering));
+    auto indexed = convert_to_indexed(source.get(), options.generated->palette, 0, options);
+    for (int y = 0; y < 2; ++y)
+      for (int x = 0; x < 2; ++x)
+        EXPECT_EQ((expectedMask & (1 << (2 * y + x))) ? 3 : 0, indexed->getPixel(x, y));
+  }
+}
+
+TEST(IndexedConversion, OptimalPaletteAllowsFewerDistinctKarnColors)
+{
+  Palette palette(0, 16);
+  palette.setEntry(1, rgba(255, 0, 255, 255));
+  palette.setEntry(2, rgba(255, 0, 255, 255)); // Reserved duplicates do not count.
+  for (int scenario = 0; scenario < 4; ++scenario) {
+    ImageRef source(Image::create(IMAGE_RGB, 16, 4));
+    for (int y = 0; y < 4; ++y)
+      for (int x = 0; x < 16; ++x) {
+        const auto c = scenario == 0 ? 0 :
+                       scenario == 1 ? rgba(17, 34, 51, 255) :
+                       scenario == 2 ? (x < 8 ? rgba(17, 34, 51, 255) : rgba(238, 204, 170, 255)) :
+                                       rgba(16 + x % 3, 33 + x % 3, 50 + x % 3, 255);
+        source->putPixel(x, y, c);
+      }
+    for (auto algorithm : { render::DitheringAlgorithm::None,
+                            render::DitheringAlgorithm::Ordered,
+                            render::DitheringAlgorithm::ErrorDiffusion }) {
+      IndexedConversionOptions options;
+      options.optimal = { true, 13, false, 128 };
+      options.dithering = render::Dithering(algorithm, render::BayerMatrix::make(8), 0.65);
+      options.generated = std::make_shared<OptimalPaletteResult>(
+        optimal_palette({ source }, palette, options.optimal, {}, options.dithering));
+      const auto& result = *options.generated;
+      EXPECT_EQ(scenario == 0 ? 0 : scenario == 2 ? 2 : 1, result.colors);
+      EXPECT_EQ(result.colors, result.used);
+      std::set<color_t> unique;
+      for (int i = 3; i < 3 + result.colors; ++i) {
+        auto c = result.palette.getEntry(i);
+        EXPECT_EQ(c, snap_rgb444(c, true));
+        unique.insert(c);
+      }
+      EXPECT_EQ(result.colors, unique.size());
+      auto converted = convert_to_indexed(source.get(), result.palette, 0, options);
+      std::set<int> used;
+      for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 16; ++x) {
+          const auto index = converted->getPixel(x, y);
+          EXPECT_TRUE(index == 0 || (index >= 3 && index < 3 + result.colors));
+          if (index) used.insert(index);
+        }
+      EXPECT_EQ(unique.size(), used.size());
+    }
+  }
+}
+
 TEST(IndexedConversion, AdjustsRgbBeforeDitheringWithoutChangingSourceOrAlpha)
 {
   Palette palette(0, 16);
@@ -162,6 +321,227 @@ TEST(IndexedConversion, AdjustsRgbBeforeDitheringWithoutChangingSourceOrAlpha)
   EXPECT_FALSE(RgbConversionAdjustment{}.makeAdjustedCopy(source.get()));
 }
 
+TEST(IndexedConversion, OptimalDialogPreviewOverwriteApplyCancelUndo)
+{
+  auto system = os::System::make();
+  const char* argv[] = { g_exeName };
+  AppOptions args(1, argv);
+  App app;
+  app.initialize(args);
+  disable_test_update_check();
+  auto* context = UIContext::instance();
+  for (int target : { -1, 0, 1, 2 }) {
+    const bool bank = target >= 0;
+    const bool newBank = target == 2;
+    auto* document = context->documents().add(32, 16, bank ? ColorMode::INDEXED : ColorMode::RGB);
+    auto* sprite = document->sprite();
+    auto* layer = static_cast<LayerImage*>(sprite->firstLayer());
+    auto* palette = sprite->palette(0);
+    palette->resize(48);
+    for (int i = 0; i < 48; ++i)
+      palette->setEntry(i, rgba(255, 0, 255, 255));
+    if (bank) {
+      sprite->userData().properties(kPaletteBankProperties)["initialized"] = int32_t(3);
+      layer->userData().properties(kPaletteBankProperties)["bank"] = int8_t(-2);
+      if (!newBank) {
+        auto* other = new LayerImage(sprite);
+        sprite->root()->addLayer(other);
+        other->userData().properties(kPaletteBankProperties)["bank"] = uint8_t(target);
+        ImageRef pixel(Image::create(IMAGE_INDEXED, 1, 1));
+        pixel->clear(3);
+        other->addCel(new Cel(0, pixel));
+      }
+    }
+    ImageRef image(Image::create(IMAGE_RGB, 32, 16));
+    for (int y = 0; y < 16; ++y)
+      for (int x = 0; x < 32; ++x)
+        image->putPixel(x, y, rgba(x * 8, y * 16, (x + y) * 5, x < 8 ? 96 : 255));
+    layer->cel(0)->data()->setImage(image, layer);
+    sprite->setTotalFrames(2);
+    layer->addCel(Cel::MakeLink(1, layer->cel(0)));
+    context->setActiveLayer(layer);
+    const auto history = document->undoHistory()->currentState();
+    const Palette before(*palette);
+    const ImageRef original(Image::createCopy(image.get()));
+    auto surface = system->makeRgbaSurface(32, 16);
+    const auto snapshot = [&] {
+      auto& engine = Editor::renderEngine();
+      engine.setProjection(render::Projection());
+      engine.setNonactiveLayersOpacity(255);
+      engine.setTransparentBackground();
+      engine.setSelectedLayer(layer);
+      engine.renderSprite(surface.get(), sprite, 0, gfx::Clip(0, 0, sprite->bounds()));
+      std::vector<gfx::Color> pixels;
+      for (int y = 0; y < 16; ++y)
+        for (int x = 0; x < 32; ++x)
+          pixels.push_back(surface->getPixel(x, y));
+      return pixels;
+    };
+    const auto originalView = snapshot();
+    for (bool accept : { false, true }) {
+      int stage = 0;
+      std::vector<gfx::Color> first, final;
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(25);
+      ui::Timer timer(30);
+      timer.Tick.connect([&] {
+        auto* window = ui::Manager::getDefault()->getTopWindow();
+        auto* optimal = dynamic_cast<ui::CheckBox*>(window->findChild("optimal"));
+        if (!optimal)
+          return;
+        if (std::chrono::steady_clock::now() > deadline) {
+          ADD_FAILURE() << "Optimal preview timeout: bank " << bank << " stage " << stage;
+          timer.stop();
+          window->closeWindow(nullptr);
+          return;
+        }
+        EXPECT_EQ(history, document->undoHistory()->currentState());
+        EXPECT_EQ(before, *sprite->palette(0));
+        EXPECT_EQ(0, count_diff_between_images(original.get(), layer->cel(0)->image()));
+        if (stage == 0) {
+          // Wait for the ordinary indexed preview, then compare optimization
+          // against that result rather than the original RGB canvas.
+          if (!newBank && snapshot().back()!=gfx::rgba(255,0,255)) return;
+          EXPECT_EQ(newBank, optimal->isSelected());
+          EXPECT_TRUE(optimal->isVisible());
+          EXPECT_EQ(13,static_cast<ui::Slider*>(window->findChild("artwork_colors"))->getValue());
+          EXPECT_TRUE(window->findChild("destination_palette")->isVisible());
+          if (!newBank)
+            EXPECT_EQ("3: #ff00ff",window->findChild("destination_swatches")->children()[3]->text());
+          EXPECT_GT(window->findChild("destination_swatches")->children()[3]->bounds().w, 0);
+          EXPECT_GT(window->findChild("destination_swatches")->children()[3]->bounds().h, 0);
+          EXPECT_EQ(nullptr,window->findChild("overwrite"));
+          if (!newBank) {
+            const auto ordinaryPreview = snapshot();
+            int confirmations = 0;
+            ui::Timer promptTimer(30);
+            promptTimer.Tick.connect([&] {
+              auto* alert = dynamic_cast<ui::Alert*>(ui::Manager::getDefault()->getTopWindow());
+              if (!alert) return;
+              EXPECT_EQ("Overwrite Palette", alert->text());
+              EXPECT_EQ(history, document->undoHistory()->currentState());
+              EXPECT_EQ(before, *sprite->palette(0));
+              EXPECT_EQ(ordinaryPreview, snapshot());
+              // Cancel the first attempt to enable optimization, then allow it.
+              auto* button = static_cast<ui::Button*>(alert->findChild(
+                confirmations++ == 0 ? "button-2" : "button-1"));
+              button->Click();
+            });
+            promptTimer.start();
+            optimal->setSelected(true);
+            optimal->Click();
+            EXPECT_EQ(1, confirmations);
+            EXPECT_FALSE(optimal->isSelected());
+            EXPECT_TRUE(window->isVisible());
+            EXPECT_EQ(ordinaryPreview, snapshot());
+            optimal->setSelected(true);
+            optimal->Click();
+            promptTimer.stop();
+            EXPECT_EQ(2, confirmations);
+            EXPECT_TRUE(optimal->isSelected());
+          }
+          EXPECT_EQ(nullptr, window->findChild("overwrite_warning"));
+          EXPECT_TRUE(window->findChild("ok")->isEnabled());
+          ++stage;
+        }
+        else {
+          const auto status = window->findChild("optimal_status")->text();
+          if (status.find("13 colors generated / 13 used") == std::string::npos)
+            return;
+          if (stage == 1) {
+            first = snapshot();
+            EXPECT_NE(originalView, first);
+            EXPECT_NE(gfx::rgba(255,0,255),first.back());
+            EXPECT_EQ("Destination palette (new):",window->findChild("destination_palette_label")->text());
+            EXPECT_TRUE(window->findChild("destination_swatches")->children()[0]->isVisible());
+            EXPECT_TRUE(window->findChild("destination_swatches")->children()[15]->isVisible());
+            if (bank && !newBank)
+              EXPECT_NE(originalView[0], first[0]); // Shared bank layer previews too.
+            auto* preview = static_cast<ui::CheckBox*>(window->findChild("preview"));
+            EXPECT_TRUE(preview->isSelected());
+            preview->setSelected(false);
+            preview->Click();
+            EXPECT_EQ(originalView, snapshot());
+            auto* transparency = static_cast<ui::ComboBox*>(window->findChild("transparency"));
+            auto* cutoff = window->findChild("alpha_cutoff");
+            auto* amount = static_cast<ui::Slider*>(window->findChild("transparency_dither_amount"));
+            EXPECT_TRUE(cutoff->isVisible());
+            EXPECT_FALSE(amount->isVisible());
+            EXPECT_EQ(100, amount->getValue());
+            transparency->setSelectedItemIndex(1);
+            transparency->Change();
+            EXPECT_FALSE(cutoff->isVisible());
+            EXPECT_TRUE(amount->isVisible());
+            auto* brightness = static_cast<ui::Slider*>(window->findChild("brightness"));
+            brightness->setValue(25);
+            amount->setValue(65);
+            amount->Change();
+            EXPECT_EQ(originalView, snapshot());
+            ++stage;
+          }
+          else if (stage == 2) {
+            // A worker completing while Preview is off must leave the original
+            // full-color canvas visible. Re-enabling publishes the cached result.
+            EXPECT_EQ(originalView, snapshot());
+            auto* preview = static_cast<ui::CheckBox*>(window->findChild("preview"));
+            preview->setSelected(true);
+            preview->Click();
+            final = snapshot();
+            EXPECT_NE(first, final);
+            preview->setSelected(false);
+            preview->Click();
+            EXPECT_EQ(originalView, snapshot());
+            ++stage;
+            timer.stop();
+            if (!accept) {
+              window->closeWindow(nullptr);
+              return;
+            }
+            static_cast<ui::Button*>(window->findChild("ok"))->Click();
+          }
+        }
+      });
+      timer.start();
+      if (bank) {
+        IndexedConversionOptions options;
+        EXPECT_EQ(accept, choose_palette_bank_conversion(layer, target, options));
+        if (accept) {
+          Tx tx(sprite);
+          set_layer_palette_bank(tx, layer, target, options);
+          tx.commit();
+        }
+      }
+      else {
+        Params params;
+        params.set("ui", "true");
+        context->executeCommand(Commands::instance()->byId("ChangePixelFormat"), params);
+      }
+      timer.stop();
+      ASSERT_EQ(3, stage);
+      if (accept) {
+        EXPECT_EQ(final, snapshot());
+        EXPECT_EQ(before.getEntry(bank ? target * 16 + 1 : 1),
+                  sprite->palette(0)->getEntry(bank ? target * 16 + 1 : 1));
+        EXPECT_EQ(before.getEntry(bank ? target * 16 + 2 : 2),
+                  sprite->palette(0)->getEntry(bank ? target * 16 + 2 : 2));
+        EXPECT_EQ(layer->cel(0)->data(), layer->cel(1)->data());
+        for (auto* cel : layer->cels())
+          for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 32; ++x) {
+              auto c = cel->image()->getPixel(x, y);
+              EXPECT_TRUE(c == 0 || (c >= 3 && c <= 15));
+            }
+        document->undoHistory()->undo();
+      }
+      EXPECT_EQ(history, document->undoHistory()->currentState());
+      EXPECT_EQ(before, *sprite->palette(0));
+      EXPECT_EQ(originalView, snapshot());
+    }
+    document->close();
+    delete document;
+  }
+  app.run(false);
+}
+
 TEST(IndexedConversion, RgbAdjustmentDialogsPreviewApplyCancelAndUndo)
 {
   auto system = os::System::make();
@@ -171,10 +551,16 @@ TEST(IndexedConversion, RgbAdjustmentDialogsPreviewApplyCancelAndUndo)
   app.initialize(args);
   disable_test_update_check();
   auto* context = UIContext::instance();
-  for (int mode : {0, 1, 2}) { // Color Mode, Color Mode + flatten, RGB -> bank.
-    const bool bank = mode == 2;
+  // Color Mode, flatten, RGB -> bank, then bank/Color Mode with KARN rules.
+  for (int mode : {0, 1, 2, 3, 4}) {
+    const bool bank = mode == 2 || mode == 3;
+    const bool karn = mode >= 3;
     auto* document = context->documents().add(20, 8, bank ? ColorMode::INDEXED : ColorMode::RGB);
     auto* sprite = document->sprite();
+    if (karn) {
+      sprite->userData().properties(kKarnRulesProperties)["enabled"] = true;
+      sprite->setGridBounds(gfx::Rect(0, 0, 8, 8));
+    }
     auto* bottom = static_cast<LayerImage*>(sprite->firstLayer());
     auto* layer = new LayerImage(sprite);
     sprite->root()->addLayer(layer);
@@ -182,8 +568,10 @@ TEST(IndexedConversion, RgbAdjustmentDialogsPreviewApplyCancelAndUndo)
     palette->resize(bank ? 32 : 16);
     for (int i = 0; i < palette->size(); ++i) palette->setEntry(i, rgba(0, 0, 0, 255));
     palette->setEntry(1, rgba(255, 255, 255, 255));
+    if (karn) palette->setEntry(3, rgba(255, 255, 255, 255));
     if (bank) {
       palette->setEntry(17, rgba(255, 255, 255, 255));
+      if (karn) palette->setEntry(19, rgba(255, 255, 255, 255));
       sprite->userData().properties(kPaletteBankProperties)["initialized"] = int32_t(3);
       bottom->userData().properties(kPaletteBankProperties)["bank"] = uint8_t(1);
       layer->userData().properties(kPaletteBankProperties)["bank"] = int8_t(-2);
@@ -330,6 +718,14 @@ TEST(IndexedConversion, RgbAdjustmentDialogsPreviewApplyCancelAndUndo)
         auto* savedLayer = layer;
         if (mode == 1) layer = static_cast<LayerImage*>(sprite->firstLayer());
         EXPECT_TRUE(matches(expectedNormal));
+        if (karn) {
+          for (auto* resultCel : layer->cels())
+            for (int y = 0; y < resultCel->image()->height(); ++y)
+              for (int x = 0; x < resultCel->image()->width(); ++x) {
+                const auto index = resultCel->image()->getPixel(x, y);
+                EXPECT_TRUE(index == 0 || (index >= 3 && index <= 15));
+              }
+        }
         document->undoHistory()->undo();
         layer = savedLayer;
       }
@@ -390,12 +786,16 @@ TEST(IndexedConversion, PastePreviewPreservesExistingHolesAndLastCompletedImage)
     const ImageRef original(Image::createCopy(celImage.get()));
     ImageRef source(Image::create(IMAGE_RGB, 5, 3));
     source->clear(rgba(180, 180, 180, 255));
+    source->putPixel(0, 0, rgba(190, 80, 40, 128));
     source->putPixel(2, 1, 0);
     const gfx::Point position(6, 5); // Extends beyond the original cel and overlaps it.
     const auto bankPalette = make_bank_palette(sprite, 0, 1);
     ImageRef base(Image::create(IMAGE_RGB, 20, 12));
     render::Render renderer;
     renderer.renderSprite(base.get(), sprite, 0);
+    ImageRef fullColor(Image::createCopy(base.get()));
+    renderer.renderImage(fullColor.get(), source.get(), nullptr, position.x, position.y,
+                         255, BlendMode::NORMAL);
     const auto expected = [&](double brightness) {
       IndexedConversionOptions options;
       options.fit = FitCriteria::RGB;
@@ -451,6 +851,14 @@ TEST(IndexedConversion, PastePreviewPreservesExistingHolesAndLastCompletedImage)
           ++stage;
         }
         else if (stage == 1 && matches(normal)) {
+          auto* preview = static_cast<ui::CheckBox*>(window->findChild("preview"));
+          EXPECT_TRUE(preview->isSelected());
+          preview->setSelected(false);
+          preview->Click();
+          EXPECT_TRUE(matches(fullColor));
+          preview->setSelected(true);
+          preview->Click();
+          EXPECT_TRUE(matches(normal));
           // Several changes before any completion is published must retain the old image.
           for (int value : {-20, 35, -100}) {
             brightness->setValue(value); brightness->Change();

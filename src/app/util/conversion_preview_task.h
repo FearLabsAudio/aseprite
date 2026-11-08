@@ -17,7 +17,7 @@ public:
           work(*this);
         }
         catch (...) {
-          m_error = std::current_exception();
+          if (!m_stop) m_error = std::current_exception();
         }
         m_running = false;
       })
